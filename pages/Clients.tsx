@@ -1,7 +1,7 @@
 import React from 'react';
 import { db } from '../db';
 import { Client, PaymentRecord, Plot } from '../types';
-import { Search, Plus, Phone, Mail, MapPin, ExternalLink, X, FileText, History, CreditCard } from 'lucide-react';
+import { Search, Plus, Phone, Mail, MapPin, ExternalLink, X, FileText, History, CreditCard, Trash2, Share2 } from 'lucide-react';
 
 const Clients = () => {
   const [clients, setClients] = React.useState<Client[]>(db.getClients());
@@ -34,6 +34,14 @@ const Clients = () => {
     setNewClient({});
   };
 
+  const handleDeleteClient = (clientId: string, name: string) => {
+    if (window.confirm(`Are you sure you want to delete profile of ${name}? This will also unassign any plots they own.`)) {
+      db.deleteClient(clientId);
+      setClients(db.getClients());
+      setViewingClient(null);
+    }
+  };
+
   const ClientDetailModal = ({ client }: { client: Client }) => {
     const payments = db.getPaymentsByClient(client.id);
     const assignedPlots = db.getPlots().filter(p => p.clientId === client.id);
@@ -52,9 +60,18 @@ const Clients = () => {
                 <p className="text-green-100 opacity-80">Registered: {new Date(client.createdAt).toLocaleDateString()}</p>
               </div>
             </div>
-            <button onClick={() => setViewingClient(null)} className="hover:bg-green-800 p-2 rounded-full">
-              <X size={24} />
-            </button>
+            <div className="flex items-center space-x-2">
+              <button 
+                onClick={() => handleDeleteClient(client.id, client.fullName)}
+                className="hover:bg-red-600/50 p-2 rounded-full transition-colors"
+                title="Delete Client Profile"
+              >
+                <Trash2 size={20} />
+              </button>
+              <button onClick={() => setViewingClient(null)} className="hover:bg-green-800 p-2 rounded-full transition-colors">
+                <X size={24} />
+              </button>
+            </div>
           </div>
 
           <div className="p-8 grid grid-cols-1 md:grid-cols-3 gap-8">
@@ -149,13 +166,26 @@ const Clients = () => {
           <h1 className="text-2xl font-bold text-gray-900">Client Profiling</h1>
           <p className="text-gray-500 text-sm">Manage client information and investment history.</p>
         </div>
-        <button 
-          onClick={() => setIsModalOpen(true)}
-          className="bg-green-600 hover:bg-green-700 text-white px-4 py-2 rounded-lg flex items-center space-x-2 transition-colors shadow-sm"
-        >
-          <Plus size={20} />
-          <span>Add New Client</span>
-        </button>
+        <div className="flex space-x-3">
+          <button 
+            onClick={() => {
+              const url = `${window.location.origin}/#/register/asset-secure-px45`;
+              navigator.clipboard.writeText(url);
+              alert('Registration link copied to clipboard! You can now send this to your client.');
+            }}
+            className="border-2 border-green-600 text-green-600 hover:bg-green-50 px-4 py-2 rounded-xl flex items-center space-x-2 transition-all font-black text-[10px] uppercase tracking-widest"
+          >
+            <Share2 size={16} />
+            <span>Registration Link</span>
+          </button>
+          <button 
+            onClick={() => setIsModalOpen(true)}
+            className="bg-green-600 hover:bg-green-700 text-white px-6 py-2 rounded-xl flex items-center space-x-2 transition-all shadow-xl font-black text-[10px] uppercase tracking-widest"
+          >
+            <Plus size={20} />
+            <span>Direct Profile</span>
+          </button>
+        </div>
       </div>
 
       <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
@@ -216,13 +246,22 @@ const Clients = () => {
                     </span>
                   </td>
                   <td className="px-6 py-4">
-                    <button 
-                      onClick={() => setViewingClient(client)}
-                      className="text-green-600 hover:text-green-800 flex items-center space-x-1 text-sm font-medium"
-                    >
-                      <span>View Profile</span>
-                      <ExternalLink size={14} />
-                    </button>
+                    <div className="flex items-center space-x-4">
+                      <button 
+                        onClick={() => setViewingClient(client)}
+                        className="text-green-600 hover:text-green-800 flex items-center space-x-1 text-sm font-medium"
+                      >
+                        <span>View Profile</span>
+                        <ExternalLink size={14} />
+                      </button>
+                      <button 
+                         onClick={() => handleDeleteClient(client.id, client.fullName)}
+                         className="text-red-400 hover:text-red-600 p-1"
+                         title="Delete Profiling"
+                      >
+                         <Trash2 size={16} />
+                      </button>
+                    </div>
                   </td>
                 </tr>
               ))}

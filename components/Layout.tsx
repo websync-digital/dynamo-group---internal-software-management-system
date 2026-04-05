@@ -11,7 +11,7 @@ import {
   LogOut,
   Menu,
   X,
-  MessageCircle
+  Award,
 } from 'lucide-react';
 
 const SidebarItem = ({ to, icon: Icon, label, onClick }: { to: string, icon: any, label: string, onClick?: () => void }) => {
@@ -34,7 +34,7 @@ const SidebarItem = ({ to, icon: Icon, label, onClick }: { to: string, icon: any
   );
 };
 
-export const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) => {
+export const Layout: React.FC<{ children: React.ReactNode, onLogout?: () => void }> = ({ children, onLogout }) => {
   const [isSidebarOpen, setIsSidebarOpen] = React.useState(false);
   const location = useLocation();
 
@@ -82,12 +82,15 @@ export const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) =>
             <SidebarItem to="/estates" icon={Map} label="Estates & Plots" />
             <SidebarItem to="/commissions" icon={Banknote} label="Commissions" />
             <SidebarItem to="/installments" icon={Clock} label="Installments" />
-            <SidebarItem to="/whatsapp" icon={MessageCircle} label="WhatsApp CRM" />
+            <SidebarItem to="/realtors" icon={Award} label="Elite Realtors" />
           </nav>
 
           <div className="p-4 border-t border-gray-200">
             <SidebarItem to="/settings" icon={Settings} label="Admin Settings" />
-            <button className="w-full flex items-center space-x-3 px-4 py-3 text-red-600 hover:bg-red-50 rounded-lg transition-colors mt-2">
+            <button 
+              onClick={onLogout}
+              className="w-full flex items-center space-x-3 px-4 py-3 text-red-600 hover:bg-red-50 rounded-lg transition-colors mt-2"
+            >
               <LogOut size={20} />
               <span className="font-medium">Sign Out</span>
             </button>

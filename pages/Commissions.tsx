@@ -1,13 +1,52 @@
-
 import React from 'react';
 import { db } from '../db';
-import { Commission, Client, Plot } from '../types';
-import { Banknote, CheckCircle, Clock, Filter, FileText } from 'lucide-react';
+import { Commission, Client, Plot, CommissionStatus } from '../types';
+import { 
+  Banknote, 
+  CheckCircle, 
+  Clock, 
+  Filter, 
+  FileText, 
+  Search, 
+  TrendingUp, 
+  Wallet,
+  User as UserIcon,
+  ArrowRight
+} from 'lucide-react';
+
+const MetricCard = ({ title, value, icon: Icon, color, subtitle }: any) => (
+  <div className="bg-white p-5 rounded-xl border border-gray-100 shadow-sm flex items-center justify-between">
+    <div>
+      <p className="text-[10px] font-bold text-gray-400 uppercase tracking-widest leading-none mb-2">{title}</p>
+      <h3 className="text-xl font-bold text-gray-900">{value}</h3>
+      {subtitle && <p className="text-[10px] text-gray-500 font-medium mt-1">{subtitle}</p>}
+    </div>
+    <div className={`p-3 rounded-lg ${color}`}>
+      <Icon className="text-white" size={20} />
+    </div>
+  </div>
+);
 
 const Commissions = () => {
   const [commissions, setCommissions] = React.useState<Commission[]>(db.getCommissions());
+  const [searchTerm, setSearchTerm] = React.useState('');
+  const [statusFilter, setStatusFilter] = React.useState<CommissionStatus | 'all'>('all');
+  
   const clients = db.getClients();
   const plots = db.getPlots();
+
+  // Metrics calculation
+  const totalPayouts = commissions.reduce((acc, c) => acc + c.amount, 0);
+  const pendingAmount = commissions.filter(c => c.status === 'pending').reduce((acc, c) => acc + c.amount, 0);
+  const paidAmount = commissions.filter(c => c.status === 'paid').reduce((acc, c) => acc + c.amount, 0);
+  
+  // Find top realtor
+  const realtorTotals = commissions.reduce((acc, c) => {
+    acc[c.realtorName] = (acc[c.realtorName] || 0) + c.amount;
+    return acc;
+  }, {} as Record<string, number>);
+  
+  const topRealtor = Object.entries(realtorTotals).sort((a, b) => (b[1] as number) - (a[1] as number))[0];
 
   const toggleStatus = (id: string) => {
     const comm = commissions.find(c => c.id === id);
@@ -22,79 +61,184 @@ const Commissions = () => {
     }
   };
 
+  const exportCSV = () => {
+    const headers = ['Realtor', 'Client', 'Plot', 'Amount', 'Percentage', 'Due Date', 'Status'];
+    const rows = filteredCommissions.map(c => [
+      c.realtorName,
+      clients.find(cl => cl.id === c.clientId)?.fullName || 'N/A',
+      plots.find(p => p.id === c.plotId)?.plotNumber || 'N/A',
+      c.amount,
+      c.percentage + '%',
+      c.dueDate,
+      c.status
+    ]);
+
+    const csvContent = [headers, ...rows].map(e => e.join(",")).join("\n");
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+    const link = document.createElement("a");
+    const url = URL.createObjectURL(blob);
+    link.setAttribute("href", url);
+    link.setAttribute("download", `commissions_${new Date().toISOString().split('T')[0]}.csv`);
+    link.style.visibility = 'hidden';
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  };
+
+  const filteredCommissions = [...commissions]
+    .sort((a, b) => {
+      // 1. Prioritize Pending status
+      if (a.status === 'pending' && b.status === 'paid') return -1;
+      if (a.status === 'paid' && b.status === 'pending') return 1;
+      
+      // 2. Secondary sort by createdAt descending
+      return new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime();
+    })
+    .filter(c => {
+      const clientName = clients.find(cl => cl.id === c.clientId)?.fullName.toLowerCase() || '';
+      const realtorName = c.realtorName.toLowerCase();
+      const searchMatch = realtorName.includes(searchTerm.toLowerCase()) || clientName.includes(searchTerm.toLowerCase());
+      const statusMatch = statusFilter === 'all' || c.status === statusFilter;
+      return searchMatch && statusMatch;
+    });
+
+  const getInitials = (name: string) => name.split(' ').map(n => n[0]).join('').toUpperCase().slice(0, 2);
+
   return (
-    <div className="space-y-6">
-      <div className="flex justify-between items-center">
+    <div className="space-y-8 animate-in fade-in duration-500">
+      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
         <div>
           <h1 className="text-2xl font-bold text-gray-900">Commission Management</h1>
-          <p className="text-gray-500 text-sm">Track realtor earnings and payout statuses securely.</p>
+          <p className="text-gray-500 text-sm italic">"Precision in payouts, excellence in service."</p>
         </div>
-        <div className="flex space-x-2">
-          <button className="bg-white border border-gray-200 text-gray-600 px-4 py-2 rounded-lg flex items-center space-x-2 hover:bg-gray-50">
-            <Filter size={18} />
-            <span>Filter</span>
-          </button>
-          <button className="bg-green-600 hover:bg-green-700 text-white px-4 py-2 rounded-lg flex items-center space-x-2 transition-colors shadow-sm">
-            <FileText size={18} />
-            <span>Export CSV</span>
-          </button>
+        <button 
+          onClick={exportCSV}
+          className="bg-white border border-gray-200 text-gray-800 px-5 py-2.5 rounded-lg flex items-center space-x-2 hover:bg-gray-50 shadow-sm transition-all font-bold text-xs uppercase"
+        >
+          <FileText size={16} className="text-green-600" />
+          <span>Export Ledger</span>
+        </button>
+      </div>
+
+      {/* Summary Stats */}
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+        <MetricCard title="Total Projected" value={`₦${totalPayouts.toLocaleString()}`} icon={Wallet} color="bg-gray-800" subtitle="Grand total payout ledger" />
+        <MetricCard title="Pending Payouts" value={`₦${pendingAmount.toLocaleString()}`} icon={Clock} color="bg-orange-500" subtitle={`${commissions.filter(c => c.status === 'pending').length} items awaiting clearance`} />
+        <MetricCard title="Settled to Date" value={`₦${paidAmount.toLocaleString()}`} icon={CheckCircle} color="bg-green-600" subtitle="Verified successful transfers" />
+        <MetricCard title="Top Realtor" value={topRealtor ? topRealtor[0] : 'N/A'} icon={TrendingUp} color="bg-blue-600" subtitle={topRealtor ? `₦${topRealtor[1].toLocaleString()} earned` : 'No data'} />
+      </div>
+
+      {/* Filter Section */}
+      <div className="flex flex-col md:flex-row gap-4">
+        <div className="relative flex-1">
+          <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" size={18} />
+          <input 
+            type="text" 
+            placeholder="Search realtor or client name..." 
+            value={searchTerm}
+            onChange={e => setSearchTerm(e.target.value)}
+            className="w-full pl-10 pr-4 py-3 bg-white border border-gray-200 rounded-xl focus:ring-2 focus:ring-green-500 outline-none shadow-sm transition-all text-sm"
+          />
+        </div>
+        <div className="flex bg-white rounded-xl border border-gray-200 p-1 shadow-sm">
+          {(['all', 'pending', 'paid'] as const).map(filter => (
+            <button
+              key={filter}
+              onClick={() => setStatusFilter(filter)}
+              className={`px-6 py-2 rounded-lg text-xs font-bold uppercase transition-all ${
+                statusFilter === filter ? 'bg-green-600 text-white shadow-md' : 'text-gray-400 hover:text-gray-600'
+              }`}
+            >
+              {filter}
+            </button>
+          ))}
         </div>
       </div>
 
-      <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
-        <table className="w-full text-left">
-          <thead className="bg-gray-50 text-gray-500 text-xs uppercase tracking-wider font-semibold border-b">
-            <tr>
-              <th className="px-6 py-4">Realtor Name</th>
-              <th className="px-6 py-4">Client / Plot</th>
-              <th className="px-6 py-4 text-right">Commission Amount</th>
-              <th className="px-6 py-4">Due Date</th>
-              <th className="px-6 py-4">Status</th>
-              <th className="px-6 py-4">Action</th>
-            </tr>
-          </thead>
-          <tbody className="divide-y divide-gray-100">
-            {commissions.length === 0 ? (
+      {/* Main Table */}
+      <div className="bg-white rounded-2xl border border-gray-200 shadow-xl overflow-hidden">
+        <div className="overflow-x-auto">
+          <table className="w-full text-left">
+            <thead className="bg-gray-900 text-gray-300 text-[10px] uppercase tracking-[0.15em] font-black border-b border-gray-800">
               <tr>
-                <td colSpan={6} className="px-6 py-12 text-center text-gray-400">
-                  No commission records found. Commissions are auto-generated on sales.
-                </td>
+                <th className="px-8 py-5">Realtor Identity</th>
+                <th className="px-8 py-5">Client / Plot Details</th>
+                <th className="px-8 py-5 text-right">Payout Value</th>
+                <th className="px-8 py-5 text-center">Status</th>
+                <th className="px-8 py-5">Verification</th>
               </tr>
-            ) : commissions.map((comm) => (
-              <tr key={comm.id} className="hover:bg-gray-50 transition-colors">
-                <td className="px-6 py-4 font-semibold text-gray-900">{comm.realtorName}</td>
-                <td className="px-6 py-4">
-                  <div className="text-sm">
-                    <p className="font-medium">{clients.find(c => c.id === comm.clientId)?.fullName || 'N/A'}</p>
-                    <p className="text-xs text-gray-500">{plots.find(p => p.id === comm.plotId)?.plotNumber || 'N/A'}</p>
-                  </div>
-                </td>
-                <td className="px-6 py-4 text-right">
-                  <p className="font-bold text-gray-900">₦{comm.amount.toLocaleString()}</p>
-                  <p className="text-[10px] text-gray-400 font-bold">{comm.percentage}% rate</p>
-                </td>
-                <td className="px-6 py-4 text-sm text-gray-600">{comm.dueDate}</td>
-                <td className="px-6 py-4">
-                  <span className={`px-2 py-1 rounded text-xs font-bold uppercase ${
-                    comm.status === 'paid' ? 'bg-green-100 text-green-700' : 'bg-yellow-100 text-yellow-700'
-                  }`}>
-                    {comm.status}
-                  </span>
-                </td>
-                <td className="px-6 py-4">
-                  <button 
-                    onClick={() => toggleStatus(comm.id)}
-                    className={`px-3 py-1 rounded text-xs font-bold transition-colors ${
-                      comm.status === 'paid' ? 'bg-gray-100 text-gray-400' : 'bg-green-600 text-white hover:bg-green-700'
-                    }`}
-                  >
-                    {comm.status === 'paid' ? 'Revert to Pending' : 'Mark as Paid'}
-                  </button>
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
+            </thead>
+            <tbody className="divide-y divide-gray-50">
+              {filteredCommissions.length === 0 ? (
+                <tr>
+                  <td colSpan={5} className="px-8 py-20 text-center">
+                    <div className="flex flex-col items-center space-y-3 opacity-30">
+                      <Banknote size={48} />
+                      <p className="font-bold text-lg uppercase tracking-widest">Finances Clean</p>
+                      <p className="text-xs">No records matching your search were found.</p>
+                    </div>
+                  </td>
+                </tr>
+              ) : filteredCommissions.map((comm) => (
+                <tr key={comm.id} className="group hover:bg-green-50/30 transition-colors">
+                  <td className="px-8 py-6">
+                    <div className="flex items-center space-x-3">
+                      <div className="w-10 h-10 rounded-full bg-green-100 border-2 border-green-200 flex items-center justify-center text-green-700 font-black text-xs">
+                        {getInitials(comm.realtorName)}
+                      </div>
+                      <div>
+                        <p className="font-bold text-gray-900 leading-none">{comm.realtorName}</p>
+                        <p className="text-[10px] text-gray-400 font-bold uppercase mt-1">Certified Associate</p>
+                      </div>
+                    </div>
+                  </td>
+                  <td className="px-8 py-6">
+                    <div className="text-sm">
+                      <div className="flex items-center space-x-1 font-bold text-gray-800">
+                        <UserIcon size={14} className="text-gray-400" />
+                        <span>{clients.find(c => c.id === comm.clientId)?.fullName || 'N/A'}</span>
+                      </div>
+                      <div className="flex items-center space-x-1 text-[10px] text-gray-500 font-bold uppercase mt-1">
+                        <ArrowRight size={10} />
+                        <span>{plots.find(p => p.id === comm.plotId)?.plotNumber || 'N/A'}</span>
+                      </div>
+                    </div>
+                  </td>
+                  <td className="px-8 py-6 text-right">
+                    <p className="font-black text-gray-900 text-base">₦{comm.amount.toLocaleString()}</p>
+                    <div className="inline-block px-2 py-0.5 bg-gray-100 rounded text-[9px] font-black text-gray-500 uppercase mt-1">
+                      {comm.percentage}% rate
+                    </div>
+                  </td>
+                  <td className="px-8 py-6">
+                    <div className="flex justify-center">
+                      <span className={`flex items-center space-x-1.5 px-3 py-1 rounded-full text-[10px] font-black uppercase tracking-wider ${
+                        comm.status === 'paid' 
+                          ? 'bg-green-100 text-green-700 border border-green-200' 
+                          : 'bg-orange-100 text-orange-700 border border-orange-200'
+                      }`}>
+                        {comm.status === 'paid' ? <CheckCircle size={12} /> : <Clock size={12} />}
+                        <span>{comm.status}</span>
+                      </span>
+                    </div>
+                  </td>
+                  <td className="px-8 py-6">
+                    <button 
+                      onClick={() => toggleStatus(comm.id)}
+                      className={`w-full py-2.5 rounded-lg text-[10px] font-black uppercase tracking-widest transition-all ${
+                        comm.status === 'paid' 
+                          ? 'bg-gray-100 text-gray-400 hover:bg-gray-200' 
+                          : 'bg-green-600 text-white hover:bg-green-700 shadow-md active:scale-95'
+                      }`}
+                    >
+                      {comm.status === 'paid' ? 'Undo Audit' : 'Confirm Payout'}
+                    </button>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
       </div>
     </div>
   );

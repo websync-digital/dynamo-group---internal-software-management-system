@@ -1,5 +1,5 @@
 
-export type PlotStatus = 'available' | 'sold' | 'installment';
+export type PlotStatus = 'available' | 'sold' | 'installment' | 'reserved';
 export type PaymentMethod = 'bank_transfer' | 'cheque' | 'cash' | 'pos';
 export type CommissionStatus = 'pending' | 'paid';
 export type InstallmentFrequency = 'monthly' | 'quarterly';
@@ -21,6 +21,7 @@ export interface Estate {
   name: string;
   location: string;
   totalPlots: number;
+  basePrice?: number;
 }
 
 export interface Plot {
@@ -55,6 +56,7 @@ export interface Commission {
   dueDate: string;
   paidDate?: string;
   status: CommissionStatus;
+  createdAt: string;
 }
 
 export interface InstallmentPlan {
@@ -66,4 +68,25 @@ export interface InstallmentPlan {
   startDate: string;
   nextDueDate: string;
   remainingAmount: number;
+}
+
+export interface SmsSettings {
+  apiUrl: string;
+  apiKey: string;
+  senderId: string;
+  isConfigured: boolean;
+  template: string;
+}
+export interface Realtor {
+  id: string;
+  fullName: string;
+  phone: string;
+  whatsapp: string;
+  email: string;
+  location: string;
+  bankName: string;
+  accountName: string;
+  accountNumber: string;
+  status: 'active' | 'pending' | 'suspended';
+  createdAt: string;
 }
