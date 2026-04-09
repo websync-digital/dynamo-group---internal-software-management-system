@@ -3,47 +3,48 @@ import { db } from '../db';
 import { supabase } from '../supabaseClient';
 import SkeletonLoader from '../components/SkeletonLoader';
 import { Estate, Plot, Client, PaymentMethod, PlotStatus, Commission, InstallmentPlan } from '../types';
-import { LayoutGrid, MapPin, X, Plus, Wallet, User, Tag, Phone, Mail, Calendar, ShieldCheck, Clock, FileText } from 'lucide-react';
+import { LayoutGrid, MapPin, X, Plus, Wallet, User, Tag, Phone, Mail, Calendar, ShieldCheck, Clock, FileText, Loader2 } from 'lucide-react';
+import { useInfiniteRealtime } from '../utils/useInfiniteRealtime';
+import { useInView } from "../utils/useInView";
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
 
 const Estates = () => {
-  const [estates, setEstates] = React.useState<Estate[]>([]);
-  const [plots, setPlots] = React.useState<Plot[]>([]);
-  const [clients, setClients] = React.useState<Client[]>([]);
   const [selectedEstate, setSelectedEstate] = React.useState<Estate | null>(null);
   const [sellingPlot, setSellingPlot] = React.useState<Plot | null>(null);
   const [viewingOwnership, setViewingOwnership] = React.useState<{plot: Plot, client: Client} | null>(null);
-  const [isLoading, setIsLoading] = React.useState(true);
 
-  const fetchEstateData = async () => {
-    const [fetchedEstates, fetchedPlots, fetchedClients] = await Promise.all([
-      db.getEstates(),
-      db.getPlots(),
-      db.getClients()
-    ]);
-    setEstates(fetchedEstates);
-    setPlots(fetchedPlots);
-    setClients(fetchedClients);
-    if (!selectedEstate && fetchedEstates.length > 0) {
-      setSelectedEstate(fetchedEstates[0]);
-    }
-    setIsLoading(false);
-  };
+    const { data: estates, isLoading: isLoadingEstates } = useInfiniteRealtime<Estate>({ 
+    table: 'estates', 
+    pageSize: 100,
+    orderBy: 'name', // Sorted alphabetically to avoid createdAt confusion
+    orderAscending: true 
+  });
+  const { data: clients } = useInfiniteRealtime<Client>({ table: 'clients', pageSize: 1000 });
+
+  const { data: filteredPlots, isLoading: isLoadingPlots, hasNextPage, loadMore, isFetchingNextPage } = useInfiniteRealtime<Plot>({ 
+    table: 'plots', 
+    pageSize: 100, 
+    orderBy: 'plotNumber', // Precision inventory requires identifier sorting
+    orderAscending: true,
+    filters: selectedEstate ? { estateId: selectedEstate.id } : undefined
+  });
+
+  const isLoading = isLoadingEstates || (selectedEstate && isLoadingPlots);
+
+  const { ref, inView } = useInView({ threshold: 0 });
 
   React.useEffect(() => {
-    fetchEstateData();
+    if (inView && hasNextPage && !isFetchingNextPage) {
+      loadMore();
+    }
+  }, [inView, hasNextPage, isFetchingNextPage, loadMore]);
 
-    const channel = supabase.channel('public:estates_sync')
-      .on('postgres_changes', { event: '*', schema: 'public' }, () => {
-        fetchEstateData();
-      })
-      .subscribe();
-
-    return () => {
-      supabase.removeChannel(channel);
-    };
-  }, []); // Replaced selectedEstate dependency to avoid re-renders
+  React.useEffect(() => {
+    if (!selectedEstate && estates.length > 0) {
+      setSelectedEstate(estates[0]);
+    }
+  }, [estates, selectedEstate]);
 
   const [saleForm, setSaleForm] = React.useState({
     clientId: '',
@@ -76,7 +77,7 @@ const Estates = () => {
 
   const [contextMenu, setContextMenu] = React.useState<{ x: number, y: number, type: 'estate' | 'plot', id: string, name: string } | null>(null);
 
-  const filteredPlots = plots.filter(p => p.estateId === selectedEstate?.id);
+
 
   const handleSale = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -128,7 +129,7 @@ const Estates = () => {
       });
     }
 
-    await fetchEstateData();
+
     setSellingPlot(null);
     alert('Plot allocation completed successfully!');
   };
@@ -146,7 +147,7 @@ const Estates = () => {
     };
 
     await db.savePlot(newPlot);
-    await fetchEstateData();
+
     setIsAddingPlot(false);
     setNewPlotForm({ plotNumber: '', size: '500sqm', price: selectedEstate.basePrice || 5000000, status: 'available' });
   };
@@ -156,7 +157,7 @@ const Estates = () => {
     if (!editingPlot) return;
 
     await db.savePlot(editingPlot);
-    await fetchEstateData();
+
     setEditingPlot(null);
   };
 
@@ -164,7 +165,7 @@ const Estates = () => {
     if (!selectedEstate || !selectedEstate.basePrice) return;
     if (window.confirm(`Synchronize all ${filteredPlots.filter(p => p.status === 'available').length} available plots to ₦${selectedEstate.basePrice.toLocaleString()}?`)) {
       await db.updateAvailablePlotPrices(selectedEstate.id, selectedEstate.basePrice);
-      await fetchEstateData();
+
       alert('Inventory pricing synchronized!');
     }
   };
@@ -173,7 +174,7 @@ const Estates = () => {
     if (!selectedEstate) return;
     const updated = { ...selectedEstate, basePrice: newPrice };
     await db.saveEstate(updated);
-    await fetchEstateData();
+
     setSelectedEstate(updated);
   };
 
@@ -187,7 +188,7 @@ const Estates = () => {
     };
 
     await db.saveEstate(newEstate);
-    await fetchEstateData();
+
     setSelectedEstate(null); // Fetch logic will reselect appropriately or can be selected later
     setIsAddingEstate(false);
     setNewEstateForm({ name: '', location: '', totalPlots: 0, basePrice: 5000000 });
@@ -212,12 +213,12 @@ const Estates = () => {
         if (selectedEstate?.id === contextMenu.id) {
           setSelectedEstate(null);
         }
-        await fetchEstateData();
+
       }
     } else {
       if (window.confirm(`Delete plot ${contextMenu.name}?`)) {
         await db.deletePlot(contextMenu.id);
-        await fetchEstateData();
+
       }
     }
     setContextMenu(null);
@@ -506,6 +507,11 @@ const Estates = () => {
                   <Plus size={24} />
                   <span>Insert Plot</span>
                 </button>
+                {hasNextPage && (
+                  <div ref={ref} className="p-5 rounded-2xl border-2 border-transparent flex flex-col items-center justify-center col-span-full">
+                    <Loader2 className="animate-spin text-green-600 mx-auto" size={24} />
+                  </div>
+                )}
               </div>
             </div>
           </div>
@@ -568,7 +574,7 @@ const Estates = () => {
                     <Calendar size={14} className="text-blue-600" />
                     <span className="text-[10px] font-black text-gray-400 uppercase tracking-widest">Acquired</span>
                   </div>
-                  <span className="font-bold text-gray-900">{new Date(viewingOwnership.plot.clientId ? (plots.find(p=>p.id===viewingOwnership.plot.id)?.clientId? '2026-04-01' : 'N/A') : 'N/A').toLocaleDateString()}</span>
+                  <span className="font-bold text-gray-900">{new Date(viewingOwnership.plot.clientId ? (filteredPlots.find(p=>p.id===viewingOwnership.plot.id)?.clientId? '2026-04-01' : 'N/A') : 'N/A').toLocaleDateString()}</span>
                 </div>
               </div>
 

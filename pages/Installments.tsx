@@ -4,10 +4,11 @@ import { supabase } from '../supabaseClient';
 import SkeletonLoader from '../components/SkeletonLoader';
 import { InstallmentPlan, PaymentMethod, Plot, Estate, Client } from '../types';
 import { Clock, Send, Bell, Calendar, Mail, MessageSquare, Phone, Loader2, Wallet, X, ShieldCheck } from 'lucide-react';
+import { useInfiniteRealtime } from '../utils/useInfiniteRealtime';
+import { useInView } from "../utils/useInView";
 import { smsService } from '../utils/smsService';
 
 const Installments = () => {
-  const [installments, setInstallments] = React.useState<InstallmentPlan[]>([]);
   const [isSending, setIsSending] = React.useState<string | null>(null);
   const [payingInstallment, setPayingInstallment] = React.useState<InstallmentPlan | null>(null);
   const [paymentForm, setPaymentForm] = React.useState({
@@ -15,38 +16,24 @@ const Installments = () => {
     amount: 0
   });
 
-  const [plots, setPlots] = React.useState<Plot[]>([]);
-  const [estates, setEstates] = React.useState<Estate[]>([]);
-  const [clients, setClients] = React.useState<Client[]>([]);
-  const [isLoading, setIsLoading] = React.useState(true);
+  const { data: installments, isLoading, hasNextPage, loadMore, isFetchingNextPage } = useInfiniteRealtime<InstallmentPlan>({
+    table: 'installments',
+    pageSize: 50,
+    orderBy: 'nextDueDate',
+    orderAscending: true
+  });
 
-  const fetchData = async () => {
-    const [fetchedInstallments, fetchedPlots, fetchedEstates, fetchedClients] = await Promise.all([
-      db.getInstallments(),
-      db.getPlots(),
-      db.getEstates(),
-      db.getClients()
-    ]);
-    setInstallments(fetchedInstallments);
-    setPlots(fetchedPlots);
-    setEstates(fetchedEstates);
-    setClients(fetchedClients);
-    setIsLoading(false);
-  };
+  const { data: plots } = useInfiniteRealtime<Plot>({ table: 'plots', pageSize: 1000 });
+  const { data: estates } = useInfiniteRealtime<Estate>({ table: 'estates', pageSize: 100 });
+  const { data: clients } = useInfiniteRealtime<Client>({ table: 'clients', pageSize: 1000 });
+
+  const { ref, inView } = useInView({ threshold: 0 });
 
   React.useEffect(() => {
-    fetchData();
-
-    const channel = supabase.channel('public:installments_sync')
-      .on('postgres_changes', { event: '*', schema: 'public' }, () => {
-        fetchData();
-      })
-      .subscribe();
-
-    return () => {
-      supabase.removeChannel(channel);
-    };
-  }, []);
+    if (inView && hasNextPage && !isFetchingNextPage) {
+      loadMore();
+    }
+  }, [inView, hasNextPage, isFetchingNextPage, loadMore]);
 
   const calculateInstallmentAmount = (inst: InstallmentPlan) => {
     const divisor = inst.frequency === 'monthly' ? 12 : 4;
@@ -58,7 +45,6 @@ const Installments = () => {
     if (!payingInstallment) return;
 
     await db.fulfillInstallmentPayment(payingInstallment.id, paymentForm.amount, paymentForm.method);
-    await fetchData();
     setPayingInstallment(null);
     setPaymentForm({ amount: 0, method: 'bank_transfer' as PaymentMethod });
     alert('Payment recorded and client ledger updated!');
@@ -225,6 +211,13 @@ const Installments = () => {
                     </tr>
                   );
                 })}
+                {hasNextPage && (
+                  <tr ref={ref}>
+                    <td colSpan={7} className="py-6 text-center">
+                      <Loader2 className="animate-spin text-green-600 mx-auto" size={24} />
+                    </td>
+                  </tr>
+                )}
               </tbody>
             </table>
           </div>

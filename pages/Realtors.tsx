@@ -3,43 +3,39 @@ import { db } from '../db';
 import { supabase } from '../supabaseClient';
 import SkeletonLoader from '../components/SkeletonLoader';
 import { Realtor } from '../types';
-import { Search, Plus, Phone, Mail, Landmark, Trash2, UserCheck, UserX, Share2, Award, ShieldCheck, Clock, X, MapPin, ExternalLink, Calendar, CheckCircle2 } from 'lucide-react';
-
+import { Search, Plus, Phone, Mail, Landmark, Trash2, UserCheck, UserX, Share2, Award, ShieldCheck, Clock, X, MapPin, ExternalLink, Calendar, CheckCircle2, Loader2 } from 'lucide-react';
+import { useInfiniteRealtime } from '../utils/useInfiniteRealtime';
+import { useInView } from "../utils/useInView";
 const Realtors = () => {
-  const [realtors, setRealtors] = React.useState<Realtor[]>([]);
   const [search, setSearch] = React.useState('');
+  const [debouncedSearch, setDebouncedSearch] = React.useState('');
   const [viewingRealtor, setViewingRealtor] = React.useState<Realtor | null>(null);
-  const [isLoading, setIsLoading] = React.useState(true);
-
-  const fetchRealtors = async () => {
-    const data = await db.getRealtors();
-    setRealtors(data);
-    setIsLoading(false);
-  };
 
   React.useEffect(() => {
-    fetchRealtors();
+    const t = setTimeout(() => setDebouncedSearch(search), 300);
+    return () => clearTimeout(t);
+  }, [search]);
 
-    const channel = supabase.channel('public:realtors')
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'realtors' }, () => {
-        fetchRealtors();
-      })
-      .subscribe();
+  const { data: realtors, isLoading, hasNextPage, loadMore, isFetchingNextPage } = useInfiniteRealtime<Realtor>({
+    table: 'realtors',
+    pageSize: 50,
+    orderBy: 'createdAt',
+    orderAscending: false,
+    searchFields: ['fullName', 'email'],
+    searchValue: debouncedSearch
+  });
 
-    return () => {
-      supabase.removeChannel(channel);
-    };
-  }, []);
+  const { ref, inView } = useInView({ threshold: 0 });
 
-  const filteredRealtors = realtors.filter(r => 
-    r.fullName.toLowerCase().includes(search.toLowerCase()) || 
-    r.email.toLowerCase().includes(search.toLowerCase())
-  );
+  React.useEffect(() => {
+    if (inView && hasNextPage && !isFetchingNextPage) {
+      loadMore();
+    }
+  }, [inView, hasNextPage, isFetchingNextPage, loadMore]);
 
   const handleDelete = async (id: string, name: string) => {
     if (window.confirm(`Permanently delete Realtor Profile: ${name}?`)) {
       await db.deleteRealtor(id);
-      await fetchRealtors();
       setViewingRealtor(null);
     }
   };
@@ -48,7 +44,6 @@ const Realtors = () => {
     const nextStatus = realtor.status === 'active' ? 'suspended' : 'active';
     const updated = { ...realtor, status: nextStatus as any };
     await db.saveRealtor(updated);
-    await fetchRealtors();
     setViewingRealtor(updated);
   };
 
@@ -169,11 +164,10 @@ const Realtors = () => {
         </div>
         <div className="flex space-x-3">
           <button
-            onClick={fetchRealtors}
-            className="bg-white border-2 border-gray-200 text-gray-700 hover:bg-gray-50 px-5 py-2.5 rounded-2xl flex items-center space-x-2 transition-all shadow-xl font-black text-[10px] uppercase tracking-[0.2em]"
+            className="bg-white border-2 border-gray-200 text-gray-700 px-5 py-2.5 rounded-2xl flex items-center space-x-2 shadow-xl font-black text-[10px] uppercase tracking-[0.2em] opacity-50 cursor-not-allowed"
           >
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/></svg>
-            <span>Sync</span>
+            <span>Live Sync (Auto)</span>
           </button>
           <button 
             onClick={copyRegistrationLink}
@@ -211,7 +205,7 @@ const Realtors = () => {
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-50">
-              {filteredRealtors.length === 0 ? (
+              {realtors.length === 0 && !isLoading ? (
                 <tr>
                   <td colSpan={5} className="px-8 py-20 text-center text-gray-300">
                     <div className="flex flex-col items-center space-y-4">
@@ -220,7 +214,7 @@ const Realtors = () => {
                     </div>
                   </td>
                 </tr>
-              ) : filteredRealtors.map((realtor) => (
+              ) : realtors.map((realtor) => (
                 <tr key={realtor.id} className="hover:bg-green-50/20 transition-all cursor-pointer" onClick={() => setViewingRealtor(realtor)}>
                   <td className="px-8 py-6">
                     <div className="flex items-center space-x-4">
@@ -286,6 +280,13 @@ const Realtors = () => {
                   </td>
                 </tr>
               ))}
+              {hasNextPage && (
+                <tr ref={ref}>
+                  <td colSpan={5} className="py-6 text-center">
+                    <Loader2 className="animate-spin text-green-600 mx-auto" size={24} />
+                  </td>
+                </tr>
+              )}
             </tbody>
           </table>
         </div>

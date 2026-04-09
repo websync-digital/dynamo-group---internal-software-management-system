@@ -13,8 +13,11 @@ import {
   TrendingUp, 
   Wallet,
   User as UserIcon,
-  ArrowRight
+  ArrowRight,
+  Loader2
 } from 'lucide-react';
+import { useInfiniteRealtime } from '../utils/useInfiniteRealtime';
+import { useInView } from "../utils/useInView";
 
 const MetricCard = ({ title, value, icon: Icon, color, subtitle }: any) => (
   <div className="bg-white p-5 rounded-xl border border-gray-100 shadow-sm flex items-center justify-between">
@@ -30,42 +33,36 @@ const MetricCard = ({ title, value, icon: Icon, color, subtitle }: any) => (
 );
 
 const Commissions = () => {
-  const [commissions, setCommissions] = React.useState<Commission[]>([]);
   const [searchTerm, setSearchTerm] = React.useState('');
+  const [debouncedSearch, setDebouncedSearch] = React.useState('');
   const [statusFilter, setStatusFilter] = React.useState<CommissionStatus | 'all'>('all');
-  
-  const [clients, setClients] = React.useState<Client[]>([]);
-  const [plots, setPlots] = React.useState<Plot[]>([]);
-  const [realtors, setRealtors] = React.useState<any[]>([]);
-  const [isLoading, setIsLoading] = React.useState(true);
-
-  const fetchData = async () => {
-    const [fetchedCommissions, fetchedClients, fetchedPlots, fetchedRealtors] = await Promise.all([
-      db.getCommissions(),
-      db.getClients(),
-      db.getPlots(),
-      db.getRealtors()
-    ]);
-    setCommissions(fetchedCommissions);
-    setClients(fetchedClients);
-    setPlots(fetchedPlots);
-    setRealtors(fetchedRealtors);
-    setIsLoading(false);
-  };
 
   React.useEffect(() => {
-    fetchData();
+    const t = setTimeout(() => setDebouncedSearch(searchTerm), 300);
+    return () => clearTimeout(t);
+  }, [searchTerm]);
 
-    const channel = supabase.channel('public:commissions_sync')
-      .on('postgres_changes', { event: '*', schema: 'public' }, () => {
-        fetchData();
-      })
-      .subscribe();
+  const { data: commissions, isLoading, hasNextPage, loadMore, isFetchingNextPage } = useInfiniteRealtime<Commission>({
+    table: 'commissions',
+    pageSize: 50,
+    orderBy: 'createdAt',
+    orderAscending: false,
+    searchFields: ['realtorName'],
+    searchValue: debouncedSearch,
+    filters: statusFilter !== 'all' ? { status: statusFilter } : undefined
+  });
 
-    return () => {
-      supabase.removeChannel(channel);
-    };
-  }, []);
+  const { data: clients } = useInfiniteRealtime<Client>({ table: 'clients', pageSize: 1000 });
+  const { data: plots } = useInfiniteRealtime<Plot>({ table: 'plots', pageSize: 1000 });
+  const { data: realtors } = useInfiniteRealtime<any>({ table: 'realtors', pageSize: 1000 });
+
+  const { ref, inView } = useInView({ threshold: 0 });
+
+  React.useEffect(() => {
+    if (inView && hasNextPage && !isFetchingNextPage) {
+      loadMore();
+    }
+  }, [inView, hasNextPage, isFetchingNextPage, loadMore]);
 
   // Metrics calculation
   const totalPayouts = commissions.reduce((acc, c) => acc + c.amount, 0);
@@ -89,7 +86,6 @@ const Commissions = () => {
         paidDate: comm.status === 'pending' ? new Date().toISOString().split('T')[0] : undefined
       };
       await db.saveCommission(updated);
-      await fetchData();
     }
   };
 
@@ -119,19 +115,9 @@ const Commissions = () => {
 
   const filteredCommissions = [...commissions]
     .sort((a, b) => {
-      // 1. Prioritize Pending status
       if (a.status === 'pending' && b.status === 'paid') return -1;
       if (a.status === 'paid' && b.status === 'pending') return 1;
-      
-      // 2. Secondary sort by createdAt descending
       return new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime();
-    })
-    .filter(c => {
-      const clientName = clients.find(cl => cl.id === c.clientId)?.fullName.toLowerCase() || '';
-      const realtorName = c.realtorName.toLowerCase();
-      const searchMatch = realtorName.includes(searchTerm.toLowerCase()) || clientName.includes(searchTerm.toLowerCase());
-      const statusMatch = statusFilter === 'all' || c.status === statusFilter;
-      return searchMatch && statusMatch;
     });
 
   const getInitials = (name: string) => name.split(' ').map(n => n[0]).join('').toUpperCase().slice(0, 2);
@@ -287,6 +273,13 @@ const Commissions = () => {
                   </td>
                 </tr>
               ))}
+              {hasNextPage && (
+                <tr ref={ref}>
+                  <td colSpan={6} className="py-6 text-center">
+                    <Loader2 className="animate-spin text-green-600 mx-auto" size={24} />
+                  </td>
+                </tr>
+              )}
             </tbody>
           </table>
         </div>

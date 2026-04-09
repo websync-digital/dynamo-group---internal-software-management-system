@@ -8,7 +8,7 @@ export const smsService = {
    * Automatically routes between API background sending and Native Fallback
    */
   send: async (phone: string, message: string): Promise<{ success: boolean; method: 'api' | 'fallback'; error?: string }> => {
-    const settings = db.getSmsSettings();
+    const settings = await db.getSmsSettings();
 
     if (settings.isConfigured && settings.apiUrl && settings.apiKey) {
       try {

@@ -4,6 +4,7 @@ import { supabase } from '../supabaseClient';
 import SkeletonLoader from '../components/SkeletonLoader';
 import { Users, MapPin, TrendingUp, AlertCircle, Clock, Banknote } from 'lucide-react';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
+import { useInfiniteRealtime } from '../utils/useInfiniteRealtime';
 
 const StatCard = ({ title, value, icon: Icon, color, subtitle }: any) => (
   <div className="bg-white p-6 rounded-xl border border-gray-100 shadow-sm flex items-center justify-between">
@@ -19,42 +20,13 @@ const StatCard = ({ title, value, icon: Icon, color, subtitle }: any) => (
 );
 
 const Dashboard = () => {
-  const [clients, setClients] = React.useState([]);
-  const [plots, setPlots] = React.useState([]);
-  const [commissions, setCommissions] = React.useState([]);
-  const [installments, setInstallments] = React.useState([]);
-  const [estates, setEstates] = React.useState([]);
-  const [isLoading, setIsLoading] = React.useState(true);
+  const { data: clients, isLoading: clientsLoading } = useInfiniteRealtime<any>({ table: 'clients', pageSize: 1000 });
+  const { data: plots, isLoading: plotsLoading } = useInfiniteRealtime<any>({ table: 'plots', pageSize: 1000 });
+  const { data: commissions, isLoading: commsLoading } = useInfiniteRealtime<any>({ table: 'commissions', pageSize: 1000 });
+  const { data: installments, isLoading: instLoading } = useInfiniteRealtime<any>({ table: 'installments', pageSize: 1000 });
+  const { data: estates, isLoading: estatesLoading } = useInfiniteRealtime<any>({ table: 'estates', pageSize: 1000 });
 
-  React.useEffect(() => {
-    const fetchData = async () => {
-      const [fetchedClients, fetchedPlots, fetchedCommissions, fetchedInstallments, fetchedEstates] = await Promise.all([
-        db.getClients(),
-        db.getPlots(),
-        db.getCommissions(),
-        db.getInstallments(),
-        db.getEstates()
-      ]);
-      
-      setClients(fetchedClients);
-      setPlots(fetchedPlots);
-      setCommissions(fetchedCommissions);
-      setInstallments(fetchedInstallments);
-      setEstates(fetchedEstates);
-      setIsLoading(false);
-    };
-    fetchData();
-
-    const channel = supabase.channel('public:dashboard_sync')
-      .on('postgres_changes', { event: '*', schema: 'public' }, () => {
-        fetchData();
-      })
-      .subscribe();
-
-    return () => {
-      supabase.removeChannel(channel);
-    };
-  }, []);
+  const isLoading = clientsLoading || plotsLoading || commsLoading || instLoading || estatesLoading;
 
   if (isLoading) {
     return <SkeletonLoader />;

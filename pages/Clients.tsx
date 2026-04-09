@@ -3,40 +3,37 @@ import { db } from '../db';
 import { supabase } from '../supabaseClient';
 import SkeletonLoader from '../components/SkeletonLoader';
 import { Client, PaymentRecord, Plot, Estate } from '../types';
-import { Search, Plus, Phone, Mail, MapPin, ExternalLink, X, FileText, History, CreditCard, Trash2, Share2 } from 'lucide-react';
-
+import { Search, Plus, Phone, Mail, MapPin, ExternalLink, X, FileText, History, CreditCard, Trash2, Share2, Loader2 } from 'lucide-react';
+import { useInfiniteRealtime } from '../utils/useInfiniteRealtime';
+import { useInView } from "../utils/useInView";
 const Clients = () => {
-  const [clients, setClients] = React.useState<Client[]>([]);
   const [search, setSearch] = React.useState('');
+  const [debouncedSearch, setDebouncedSearch] = React.useState('');
   const [isModalOpen, setIsModalOpen] = React.useState(false);
   const [viewingClient, setViewingClient] = React.useState<Client | null>(null);
   const [newClient, setNewClient] = React.useState<Partial<Client>>({});
-  const [isLoading, setIsLoading] = React.useState(true);
-
-  const fetchClients = async () => {
-    const data = await db.getClients();
-    setClients(data);
-    setIsLoading(false);
-  };
 
   React.useEffect(() => {
-    fetchClients();
+    const t = setTimeout(() => setDebouncedSearch(search), 300);
+    return () => clearTimeout(t);
+  }, [search]);
 
-    const channel = supabase.channel('public:clients')
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'clients' }, () => {
-        fetchClients();
-      })
-      .subscribe();
+  const { data: clients, isLoading, hasNextPage, loadMore, isFetchingNextPage } = useInfiniteRealtime<Client>({
+    table: 'clients',
+    pageSize: 50,
+    orderBy: 'createdAt',
+    orderAscending: false,
+    searchFields: ['fullName', 'email'],
+    searchValue: debouncedSearch
+  });
 
-    return () => {
-      supabase.removeChannel(channel);
-    };
-  }, []);
+  const { ref, inView } = useInView({ threshold: 0 });
 
-  const filteredClients = clients.filter(c => 
-    c.fullName.toLowerCase().includes(search.toLowerCase()) || 
-    c.email.toLowerCase().includes(search.toLowerCase())
-  );
+  React.useEffect(() => {
+    if (inView && hasNextPage && !isFetchingNextPage) {
+      loadMore();
+    }
+  }, [inView, hasNextPage, isFetchingNextPage, loadMore]);
 
   const handleAddClient = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -51,7 +48,7 @@ const Clients = () => {
       createdAt: new Date().toISOString(),
     };
     await db.saveClient(client);
-    await fetchClients();
+    // Note: No need to call fetchClients manually, useInfiniteRealtime channel handles the INSERT
     setIsModalOpen(false);
     setNewClient({});
   };
@@ -59,7 +56,7 @@ const Clients = () => {
   const handleDeleteClient = async (clientId: string, name: string) => {
     if (window.confirm(`Are you sure you want to delete profile of ${name}? This will also unassign any plots they own.`)) {
       await db.deleteClient(clientId);
-      await fetchClients();
+      // Real-time handles UI update
       setViewingClient(null);
     }
   };
@@ -264,7 +261,7 @@ const Clients = () => {
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-100">
-              {filteredClients.map((client) => (
+              {clients.map((client) => (
                 <tr key={client.id} className="hover:bg-gray-50 transition-colors">
                   <td className="px-6 py-4">
                     <div className="flex items-center space-x-3">
@@ -315,10 +312,17 @@ const Clients = () => {
                   </td>
                 </tr>
               ))}
-              {filteredClients.length === 0 && (
+              {clients.length === 0 && !isLoading && (
                 <tr>
                   <td colSpan={5} className="px-6 py-12 text-center text-gray-400">
                     No clients found matching your search.
+                  </td>
+                </tr>
+              )}
+              {hasNextPage && (
+                <tr ref={ref}>
+                  <td colSpan={5} className="py-6 text-center">
+                    <Loader2 className="animate-spin text-green-600 mx-auto" size={24} />
                   </td>
                 </tr>
               )}

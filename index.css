@@ -1,0 +1,76 @@
+/* Global Utility and Reset */
+body {
+    font-family: 'Inter', sans-serif;
+    background-color: #ffffff;
+    -webkit-font-smoothing: antialiased;
+}
+
+/* Interactive Feedback: The "Reaction" System */
+
+/* 1. Global Scale Feedback */
+button, 
+[role="button"],
+.cursor-pointer {
+    transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+button:active, 
+[role="button"]:active,
+.cursor-pointer:active {
+    transform: scale(0.95);
+    filter: brightness(0.9);
+}
+
+/* 2. Global Hover Feedback */
+button:hover, 
+[role="button"]:hover {
+    filter: brightness(1.05);
+}
+
+/* 3. Ripple-like Animation for All Buttons */
+button {
+    position: relative;
+    overflow: hidden;
+}
+
+button::after {
+    content: "";
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    width: 0;
+    height: 0;
+    background: rgba(255, 255, 255, 0.3);
+    border-radius: 50%;
+    transform: translate(-50%, -50%);
+    transition: width 0.4s ease-out, height 0.4s ease-out, opacity 0.4s ease-out;
+    opacity: 0;
+    pointer-events: none;
+}
+
+button:active::after {
+    width: 200%;
+    height: 200%;
+    opacity: 1;
+    transition: 0s;
+}
+
+/* 4. Skeleton Pulse Integration */
+@keyframes pulse-soft {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.7; }
+}
+
+.animate-pulse-soft {
+    animation: pulse-soft 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+}
+
+/* 5. Custom Transitions for Page Elements */
+.page-transition {
+    animation: fadeIn 0.5s ease-out forwards;
+}
+
+@keyframes fadeIn {
+    from { opacity: 0; transform: translateY(10px); }
+    to { opacity: 1; transform: translateY(0); }
+}
