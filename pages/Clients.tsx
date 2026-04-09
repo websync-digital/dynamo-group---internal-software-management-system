@@ -1,24 +1,46 @@
 import React from 'react';
 import { db } from '../db';
-import { Client, PaymentRecord, Plot } from '../types';
+import { supabase } from '../supabaseClient';
+import SkeletonLoader from '../components/SkeletonLoader';
+import { Client, PaymentRecord, Plot, Estate } from '../types';
 import { Search, Plus, Phone, Mail, MapPin, ExternalLink, X, FileText, History, CreditCard, Trash2, Share2 } from 'lucide-react';
 
 const Clients = () => {
-  const [clients, setClients] = React.useState<Client[]>(db.getClients());
+  const [clients, setClients] = React.useState<Client[]>([]);
   const [search, setSearch] = React.useState('');
   const [isModalOpen, setIsModalOpen] = React.useState(false);
   const [viewingClient, setViewingClient] = React.useState<Client | null>(null);
   const [newClient, setNewClient] = React.useState<Partial<Client>>({});
+  const [isLoading, setIsLoading] = React.useState(true);
+
+  const fetchClients = async () => {
+    const data = await db.getClients();
+    setClients(data);
+    setIsLoading(false);
+  };
+
+  React.useEffect(() => {
+    fetchClients();
+
+    const channel = supabase.channel('public:clients')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'clients' }, () => {
+        fetchClients();
+      })
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, []);
 
   const filteredClients = clients.filter(c => 
     c.fullName.toLowerCase().includes(search.toLowerCase()) || 
     c.email.toLowerCase().includes(search.toLowerCase())
   );
 
-  const handleAddClient = (e: React.FormEvent) => {
+  const handleAddClient = async (e: React.FormEvent) => {
     e.preventDefault();
-    const client: Client = {
-      id: Math.random().toString(36).substr(2, 9),
+    const client: Partial<Client> = {
       fullName: newClient.fullName || '',
       dob: newClient.dob || '',
       phone: newClient.phone || '',
@@ -28,24 +50,48 @@ const Clients = () => {
       referralSource: newClient.referralSource || 'Direct',
       createdAt: new Date().toISOString(),
     };
-    db.saveClient(client);
-    setClients(db.getClients());
+    await db.saveClient(client);
+    await fetchClients();
     setIsModalOpen(false);
     setNewClient({});
   };
 
-  const handleDeleteClient = (clientId: string, name: string) => {
+  const handleDeleteClient = async (clientId: string, name: string) => {
     if (window.confirm(`Are you sure you want to delete profile of ${name}? This will also unassign any plots they own.`)) {
-      db.deleteClient(clientId);
-      setClients(db.getClients());
+      await db.deleteClient(clientId);
+      await fetchClients();
       setViewingClient(null);
     }
   };
 
   const ClientDetailModal = ({ client }: { client: Client }) => {
-    const payments = db.getPaymentsByClient(client.id);
-    const assignedPlots = db.getPlots().filter(p => p.clientId === client.id);
-    const estates = db.getEstates();
+    const [payments, setPayments] = React.useState<PaymentRecord[]>([]);
+    const [assignedPlots, setAssignedPlots] = React.useState<Plot[]>([]);
+    const [estates, setEstates] = React.useState<Estate[]>([]);
+    const [loadingData, setLoadingData] = React.useState(true);
+
+    React.useEffect(() => {
+      const loadDetails = async () => {
+        const [fetchedPayments, allPlots, allEstates] = await Promise.all([
+          db.getPaymentsByClient(client.id),
+          db.getPlots(),
+          db.getEstates()
+        ]);
+        setPayments(fetchedPayments);
+        setAssignedPlots(allPlots.filter(p => p.clientId === client.id));
+        setEstates(allEstates);
+        setLoadingData(false);
+      };
+      loadDetails();
+    }, [client.id]);
+
+    if (loadingData) {
+      return (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4">
+           <div className="bg-white p-8 rounded-xl font-bold">Loading Profile...</div>
+        </div>
+      );
+    }
 
     return (
       <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4">
@@ -159,8 +205,12 @@ const Clients = () => {
     );
   };
 
+  if (isLoading) {
+    return <SkeletonLoader />;
+  }
+
   return (
-    <div className="space-y-6">
+    <div className="space-y-6 animate-in fade-in duration-500">
       <div className="flex justify-between items-center">
         <div>
           <h1 className="text-2xl font-bold text-gray-900">Client Profiling</h1>

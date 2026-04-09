@@ -16,7 +16,7 @@ const RealtorOnboarding = () => {
     accountNumber: ''
   });
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     
     const newRealtor: Realtor = {
@@ -33,7 +33,7 @@ const RealtorOnboarding = () => {
       createdAt: new Date().toISOString()
     };
 
-    db.saveRealtor(newRealtor);
+    await db.submitRealtorOnboarding(newRealtor);
     setSubmitted(true);
   };
 

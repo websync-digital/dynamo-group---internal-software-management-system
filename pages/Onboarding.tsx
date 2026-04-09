@@ -1,6 +1,6 @@
 import React from 'react';
 import { db } from '../db';
-import { Client, PlotStatus } from '../types';
+import { Client, PlotStatus, Estate, Realtor, Plot } from '../types';
 import { CheckCircle2, User, Phone, Mail, MapPin, Calendar, Briefcase, Award } from 'lucide-react';
 
 const Onboarding = () => {
@@ -20,9 +20,25 @@ const Onboarding = () => {
   const [realtorSearch, setRealtorSearch] = React.useState('');
   const [showRealtorResults, setShowRealtorResults] = React.useState(false);
 
-  const estates = db.getEstates();
-  const realtors = db.getRealtors();
-  const plots = db.getPlots();
+  const [estates, setEstates] = React.useState<Estate[]>([]);
+  const [realtors, setRealtors] = React.useState<Realtor[]>([]);
+  const [plots, setPlots] = React.useState<Plot[]>([]);
+  const [isLoading, setIsLoading] = React.useState(true);
+
+  React.useEffect(() => {
+    const fetchData = async () => {
+      const [fetchedEstates, fetchedRealtors, fetchedPlots] = await Promise.all([
+        db.getEstates(),
+        db.getRealtors(),
+        db.getPlots()
+      ]);
+      setEstates(fetchedEstates);
+      setRealtors(fetchedRealtors);
+      setPlots(fetchedPlots);
+      setIsLoading(false);
+    };
+    fetchData();
+  }, []);
 
   const availablePlots = plots.filter(p => p.estateId === formData.estateId && p.status === 'available');
 
@@ -31,11 +47,11 @@ const Onboarding = () => {
     r.fullName.toLowerCase().includes(realtorSearch.toLowerCase())
   );
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     
     if (formData.email) {
-      const usage = db.isEmailInUse(formData.email);
+      const usage = await db.isEmailInUse(formData.email);
       if (usage.isRealtor) {
         alert("This email address is registered as an Elite Realtor. Realtors cannot be added to the Client Profiling database. Please use a separate client identity for asset management.");
         return;
@@ -54,30 +70,27 @@ const Onboarding = () => {
       createdAt: new Date().toISOString()
     };
 
-    db.saveClient(newClient);
-
-    // 2. Automated Commission Engineering
+    let newCommission = null;
     if (formData.plotId && formData.assignedRealtor) {
       const selectedPlot = plots.find(p => p.id === formData.plotId);
       if (selectedPlot) {
         const commissionPct = 10; // Default company policy
         const commissionAmount = (selectedPlot.price * commissionPct) / 100;
         
-        db.saveCommission({
-          id: Math.random().toString(36).substr(2, 9),
+        newCommission = {
           realtorName: formData.assignedRealtor,
           clientId: newClient.id,
           plotId: selectedPlot.id,
           amount: commissionAmount,
           percentage: commissionPct,
           dueDate: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString().split('T')[0],
-          status: 'pending',
+          status: 'pending' as const,
           createdAt: new Date().toISOString()
-        });
-
-        // Note: We don't mark the plot as 'sold' here yet because payment hasn't been verified by Admin.
+        };
       }
     }
+
+    await db.submitClientOnboarding(newClient, newCommission);
 
     setSubmitted(true);
   };

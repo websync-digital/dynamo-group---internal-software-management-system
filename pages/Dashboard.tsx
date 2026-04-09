@@ -1,5 +1,7 @@
 import React from 'react';
 import { db } from '../db';
+import { supabase } from '../supabaseClient';
+import SkeletonLoader from '../components/SkeletonLoader';
 import { Users, MapPin, TrendingUp, AlertCircle, Clock, Banknote } from 'lucide-react';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
 
@@ -17,11 +19,46 @@ const StatCard = ({ title, value, icon: Icon, color, subtitle }: any) => (
 );
 
 const Dashboard = () => {
-  const clients = db.getClients();
-  const plots = db.getPlots();
-  const commissions = db.getCommissions();
-  const installments = db.getInstallments();
-  const estates = db.getEstates();
+  const [clients, setClients] = React.useState([]);
+  const [plots, setPlots] = React.useState([]);
+  const [commissions, setCommissions] = React.useState([]);
+  const [installments, setInstallments] = React.useState([]);
+  const [estates, setEstates] = React.useState([]);
+  const [isLoading, setIsLoading] = React.useState(true);
+
+  React.useEffect(() => {
+    const fetchData = async () => {
+      const [fetchedClients, fetchedPlots, fetchedCommissions, fetchedInstallments, fetchedEstates] = await Promise.all([
+        db.getClients(),
+        db.getPlots(),
+        db.getCommissions(),
+        db.getInstallments(),
+        db.getEstates()
+      ]);
+      
+      setClients(fetchedClients);
+      setPlots(fetchedPlots);
+      setCommissions(fetchedCommissions);
+      setInstallments(fetchedInstallments);
+      setEstates(fetchedEstates);
+      setIsLoading(false);
+    };
+    fetchData();
+
+    const channel = supabase.channel('public:dashboard_sync')
+      .on('postgres_changes', { event: '*', schema: 'public' }, () => {
+        fetchData();
+      })
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, []);
+
+  if (isLoading) {
+    return <SkeletonLoader />;
+  }
 
   const totalClients = clients.length;
   const plotsSold = plots.filter(p => p.status !== 'available').length;

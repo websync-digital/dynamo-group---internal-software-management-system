@@ -11,22 +11,37 @@ import Settings from './pages/Settings';
 import Onboarding from './pages/Onboarding';
 import Realtors from './pages/Realtors';
 import RealtorOnboarding from './pages/RealtorOnboarding';
-import Login from './pages/Login'; // Import Login
+import Login from './pages/Login'; 
+import { supabase } from './supabaseClient';
 
 const App: React.FC = () => {
-  const [isAuthenticated, setIsAuthenticated] = React.useState<boolean>(() => {
-    return localStorage.getItem('dg_session') === 'active';
-  });
+  const [isAuthenticated, setIsAuthenticated] = React.useState<boolean>(false);
+  const [isLoading, setIsLoading] = React.useState(true);
+
+  React.useEffect(() => {
+    // Check active session on mount
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      setIsAuthenticated(!!session);
+      setIsLoading(false);
+    });
+
+    // Listen for auth changes
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
+      setIsAuthenticated(!!session);
+    });
+
+    return () => subscription.unsubscribe();
+  }, []);
 
   const handleLogin = () => {
-    localStorage.setItem('dg_session', 'active');
-    setIsAuthenticated(true);
+    // State is handled automatically by onAuthStateChange
   };
 
-  const handleLogout = () => {
-    localStorage.removeItem('dg_session');
-    setIsAuthenticated(false);
+  const handleLogout = async () => {
+    await supabase.auth.signOut();
   };
+
+  if (isLoading) return <div className="h-screen bg-[#0A0A0A] flex items-center justify-center"><div className="w-8 h-8 border-4 border-green-600 border-t-transparent rounded-full animate-spin"></div></div>;
 
   return (
     <Router>

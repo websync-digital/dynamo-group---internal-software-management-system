@@ -1,5 +1,7 @@
 import React from 'react';
 import { db } from '../db';
+import { supabase } from '../supabaseClient';
+import SkeletonLoader from '../components/SkeletonLoader';
 import { Commission, Client, Plot, CommissionStatus } from '../types';
 import { 
   Banknote, 
@@ -28,12 +30,42 @@ const MetricCard = ({ title, value, icon: Icon, color, subtitle }: any) => (
 );
 
 const Commissions = () => {
-  const [commissions, setCommissions] = React.useState<Commission[]>(db.getCommissions());
+  const [commissions, setCommissions] = React.useState<Commission[]>([]);
   const [searchTerm, setSearchTerm] = React.useState('');
   const [statusFilter, setStatusFilter] = React.useState<CommissionStatus | 'all'>('all');
   
-  const clients = db.getClients();
-  const plots = db.getPlots();
+  const [clients, setClients] = React.useState<Client[]>([]);
+  const [plots, setPlots] = React.useState<Plot[]>([]);
+  const [realtors, setRealtors] = React.useState<any[]>([]);
+  const [isLoading, setIsLoading] = React.useState(true);
+
+  const fetchData = async () => {
+    const [fetchedCommissions, fetchedClients, fetchedPlots, fetchedRealtors] = await Promise.all([
+      db.getCommissions(),
+      db.getClients(),
+      db.getPlots(),
+      db.getRealtors()
+    ]);
+    setCommissions(fetchedCommissions);
+    setClients(fetchedClients);
+    setPlots(fetchedPlots);
+    setRealtors(fetchedRealtors);
+    setIsLoading(false);
+  };
+
+  React.useEffect(() => {
+    fetchData();
+
+    const channel = supabase.channel('public:commissions_sync')
+      .on('postgres_changes', { event: '*', schema: 'public' }, () => {
+        fetchData();
+      })
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, []);
 
   // Metrics calculation
   const totalPayouts = commissions.reduce((acc, c) => acc + c.amount, 0);
@@ -48,7 +80,7 @@ const Commissions = () => {
   
   const topRealtor = Object.entries(realtorTotals).sort((a, b) => (b[1] as number) - (a[1] as number))[0];
 
-  const toggleStatus = (id: string) => {
+  const toggleStatus = async (id: string) => {
     const comm = commissions.find(c => c.id === id);
     if (comm) {
       const updated = { 
@@ -56,8 +88,8 @@ const Commissions = () => {
         status: (comm.status === 'pending' ? 'paid' : 'pending') as any,
         paidDate: comm.status === 'pending' ? new Date().toISOString().split('T')[0] : undefined
       };
-      db.saveCommission(updated);
-      setCommissions(db.getCommissions());
+      await db.saveCommission(updated);
+      await fetchData();
     }
   };
 
@@ -103,6 +135,10 @@ const Commissions = () => {
     });
 
   const getInitials = (name: string) => name.split(' ').map(n => n[0]).join('').toUpperCase().slice(0, 2);
+
+  if (isLoading) {
+    return <SkeletonLoader />;
+  }
 
   return (
     <div className="space-y-8 animate-in fade-in duration-500">
@@ -163,6 +199,7 @@ const Commissions = () => {
               <tr>
                 <th className="px-8 py-5">Realtor Identity</th>
                 <th className="px-8 py-5">Client / Plot Details</th>
+                <th className="px-8 py-5">Account Details</th>
                 <th className="px-8 py-5 text-right">Payout Value</th>
                 <th className="px-8 py-5 text-center">Status</th>
                 <th className="px-8 py-5">Verification</th>
@@ -171,7 +208,7 @@ const Commissions = () => {
             <tbody className="divide-y divide-gray-50">
               {filteredCommissions.length === 0 ? (
                 <tr>
-                  <td colSpan={5} className="px-8 py-20 text-center">
+                  <td colSpan={6} className="px-8 py-20 text-center">
                     <div className="flex flex-col items-center space-y-3 opacity-30">
                       <Banknote size={48} />
                       <p className="font-bold text-lg uppercase tracking-widest">Finances Clean</p>
@@ -203,6 +240,20 @@ const Commissions = () => {
                         <span>{plots.find(p => p.id === comm.plotId)?.plotNumber || 'N/A'}</span>
                       </div>
                     </div>
+                  </td>
+                  <td className="px-8 py-6">
+                    {(() => {
+                      const realtor = realtors.find(r => r.fullName === comm.realtorName);
+                      return realtor ? (
+                        <div className="space-y-1">
+                          <p className="text-xs font-black text-gray-900 uppercase tracking-widest">{realtor.bankName}</p>
+                          <p className="text-sm font-black text-green-700 font-mono tracking-tighter">{realtor.accountNumber}</p>
+                          <p className="text-[9px] text-gray-400 font-bold uppercase truncate max-w-[120px]">{realtor.accountName}</p>
+                        </div>
+                      ) : (
+                        <span className="text-[10px] text-gray-300 font-bold uppercase italic">No Linked Bank Data</span>
+                      );
+                    })()}
                   </td>
                   <td className="px-8 py-6 text-right">
                     <p className="font-black text-gray-900 text-base">₦{comm.amount.toLocaleString()}</p>

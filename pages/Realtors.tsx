@@ -1,31 +1,54 @@
 import React from 'react';
 import { db } from '../db';
+import { supabase } from '../supabaseClient';
+import SkeletonLoader from '../components/SkeletonLoader';
 import { Realtor } from '../types';
 import { Search, Plus, Phone, Mail, Landmark, Trash2, UserCheck, UserX, Share2, Award, ShieldCheck, Clock, X, MapPin, ExternalLink, Calendar, CheckCircle2 } from 'lucide-react';
 
 const Realtors = () => {
-  const [realtors, setRealtors] = React.useState<Realtor[]>(db.getRealtors());
+  const [realtors, setRealtors] = React.useState<Realtor[]>([]);
   const [search, setSearch] = React.useState('');
   const [viewingRealtor, setViewingRealtor] = React.useState<Realtor | null>(null);
+  const [isLoading, setIsLoading] = React.useState(true);
+
+  const fetchRealtors = async () => {
+    const data = await db.getRealtors();
+    setRealtors(data);
+    setIsLoading(false);
+  };
+
+  React.useEffect(() => {
+    fetchRealtors();
+
+    const channel = supabase.channel('public:realtors')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'realtors' }, () => {
+        fetchRealtors();
+      })
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, []);
 
   const filteredRealtors = realtors.filter(r => 
     r.fullName.toLowerCase().includes(search.toLowerCase()) || 
     r.email.toLowerCase().includes(search.toLowerCase())
   );
 
-  const handleDelete = (id: string, name: string) => {
+  const handleDelete = async (id: string, name: string) => {
     if (window.confirm(`Permanently delete Realtor Profile: ${name}?`)) {
-      db.deleteRealtor(id);
-      setRealtors(db.getRealtors());
+      await db.deleteRealtor(id);
+      await fetchRealtors();
       setViewingRealtor(null);
     }
   };
 
-  const toggleStatus = (realtor: Realtor) => {
+  const toggleStatus = async (realtor: Realtor) => {
     const nextStatus = realtor.status === 'active' ? 'suspended' : 'active';
     const updated = { ...realtor, status: nextStatus as any };
-    db.saveRealtor(updated);
-    setRealtors(db.getRealtors());
+    await db.saveRealtor(updated);
+    await fetchRealtors();
     setViewingRealtor(updated);
   };
 
@@ -133,6 +156,10 @@ const Realtors = () => {
     </div>
   );
 
+  if (isLoading) {
+    return <SkeletonLoader />;
+  }
+
   return (
     <div className="space-y-8 animate-in fade-in duration-500">
       <div className="flex flex-col md:flex-row md:items-end justify-between gap-4">
@@ -141,6 +168,13 @@ const Realtors = () => {
           <p className="text-gray-500 text-sm font-medium">Verify and manage the Dynamo Group Elite partner network.</p>
         </div>
         <div className="flex space-x-3">
+          <button
+            onClick={fetchRealtors}
+            className="bg-white border-2 border-gray-200 text-gray-700 hover:bg-gray-50 px-5 py-2.5 rounded-2xl flex items-center space-x-2 transition-all shadow-xl font-black text-[10px] uppercase tracking-[0.2em]"
+          >
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/></svg>
+            <span>Sync</span>
+          </button>
           <button 
             onClick={copyRegistrationLink}
             className="bg-green-600 text-white hover:bg-green-700 px-5 py-2.5 rounded-2xl flex items-center space-x-2 transition-all shadow-xl shadow-green-900/10 font-black text-[10px] uppercase tracking-[0.2em]"

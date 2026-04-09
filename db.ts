@@ -1,142 +1,178 @@
+import { supabase } from './supabaseClient';
 import { Client, Estate, Plot, Commission, PaymentRecord, InstallmentPlan, SmsSettings, PaymentMethod, Realtor } from './types';
 
-const STORAGE_KEYS = {
-  CLIENTS: 'dg_clients',
-  ESTATES: 'dg_estates',
-  PLOTS: 'dg_plots',
-  COMMISSIONS: 'dg_commissions',
-  PAYMENTS: 'dg_payments',
-  INSTALLMENTS: 'dg_installments',
-  SETTINGS: 'dg_settings',
-  REALTORS: 'dg_realtors',
-};
+// The local defaultValue fallback mechanism from before will be replaced with clean async fetches.
 
 const DEFAULT_SMS_SETTINGS: SmsSettings = {
   apiUrl: '',
   apiKey: '',
   senderId: 'DYNAMO',
   isConfigured: false,
-  template: 'Dear {name}, this is a reminder from Dynamo Group. Your installment of ₦{amount} is due on {date}. Please kindly settle to our official account. Thank you.'
+  template: 'Dear {name}, this is a reminder from Dynamo Group. Your installment of ₦{amount} is due on {date}. Please kindly settle to our official account. Thank you.',
+  id: 'default-settings'
 };
 
 export const db = {
-  get: <T,>(key: string, defaultValue: T): T => {
-    const data = localStorage.getItem(key);
-    return data ? JSON.parse(data) : defaultValue;
-  },
-  set: <T,>(key: string, value: T): void => {
-    localStorage.setItem(key, JSON.stringify(value));
-  },
-
   // Settings
-  getSmsSettings: (): SmsSettings => db.get(STORAGE_KEYS.SETTINGS, DEFAULT_SMS_SETTINGS),
-  saveSmsSettings: (settings: SmsSettings) => db.set(STORAGE_KEYS.SETTINGS, settings),
+  getSmsSettings: async (): Promise<SmsSettings> => {
+    const { data, error } = await supabase.from('sms_settings').select('*').limit(1).single();
+    if (error || !data) {
+      if (error && error.code !== 'PGRST116') console.error('Error fetching sms settings', error);
+      return DEFAULT_SMS_SETTINGS;
+    }
+    return data;
+  },
+  saveSmsSettings: async (settings: SmsSettings): Promise<void> => {
+    // Upsert logic for a single settings row
+    const { id, ...rest } = settings;
+    const { data, error } = await supabase.from('sms_settings').select('id').limit(1).single();
+    if (data) {
+        await supabase.from('sms_settings').update(rest).eq('id', data.id);
+    } else {
+        await supabase.from('sms_settings').insert(settings);
+    }
+  },
 
   // Clients
-  getClients: (): Client[] => db.get(STORAGE_KEYS.CLIENTS, []),
-  saveClient: (client: Client) => {
-    const clients = db.getClients();
-    const index = clients.findIndex(c => c.id === client.id);
-    if (index > -1) clients[index] = client;
-    else clients.push(client);
-    db.set(STORAGE_KEYS.CLIENTS, clients);
-  },
-  deleteClient: (clientId: string) => {
-    const clients = db.getClients().filter(c => c.id !== clientId);
-    db.set(STORAGE_KEYS.CLIENTS, clients);
-
-    // Clean up plots
-    const plots = db.getPlots().map(p => {
-      if (p.clientId === clientId) {
-        return { ...p, status: 'available' as const, clientId: undefined };
-      }
-      return p;
+  submitClientOnboarding: async (client: Partial<Client>, commission: Partial<Commission> | null): Promise<void> => {
+    const { data, error } = await supabase.rpc('submit_client_onboarding', {
+      p_client: client,
+      p_commission: commission
     });
-    db.set(STORAGE_KEYS.PLOTS, plots);
-
-    // Clean up installments
-    const installments = db.getInstallments().filter(i => i.clientId !== clientId);
-    db.set(STORAGE_KEYS.INSTALLMENTS, installments);
+    if (error) {
+      console.error('RPC Error (Client):', error);
+      alert('Failed to submit client: ' + error.message);
+      throw error;
+    }
+    if (data && typeof data === 'object' && !data.success) {
+      console.error('RPC Failed internally:', data.error);
+      alert('Failed to submit client: ' + data.error);
+      throw new Error(data.error);
+    }
+  },
+  getClients: async (): Promise<Client[]> => {
+    const { data, error } = await supabase.from('clients').select('*').order('createdAt', { ascending: false });
+    if (error) console.error(error);
+    return data || [];
+  },
+  saveClient: async (client: Partial<Client>): Promise<void> => {
+    const { id, ...rest } = client;
+    if (id && id.length > 20) { // Naive check if it's already a uuid
+      const { data: existing } = await supabase.from('clients').select('id').eq('id', id).single();
+      if (existing) {
+        await supabase.from('clients').update(rest).eq('id', id);
+        return;
+      }
+    }
+    await supabase.from('clients').insert(rest);
+  },
+  deleteClient: async (clientId: string): Promise<void> => {
+    // The CASCADE rules in Postgres will handle plot references being SET NULL or deleted.
+    await supabase.from('clients').delete().eq('id', clientId);
   },
 
   // Estates
-  getEstates: (): Estate[] => db.get(STORAGE_KEYS.ESTATES, []),
-  saveEstate: (estate: Estate) => {
-    const estates = db.getEstates();
-    const index = estates.findIndex(e => e.id === estate.id);
-    if (index > -1) estates[index] = estate;
-    else estates.push(estate);
-    db.set(STORAGE_KEYS.ESTATES, estates);
+  getEstates: async (): Promise<Estate[]> => {
+    const { data, error } = await supabase.from('estates').select('*');
+    if (error) console.error(error);
+    return data || [];
   },
-  deleteEstate: (estateId: string) => {
-    const estates = db.getEstates().filter(e => e.id !== estateId);
-    db.set(STORAGE_KEYS.ESTATES, estates);
-    
-    // Cascade delete plots
-    const plots = db.getPlots().filter(p => p.estateId !== estateId);
-    db.set(STORAGE_KEYS.PLOTS, plots);
-  },
-  
-  updateAvailablePlotPrices: (estateId: string, newPrice: number) => {
-    const plots = db.getPlots().map(p => {
-      if (p.estateId === estateId && p.status === 'available') {
-        return { ...p, price: newPrice };
+  saveEstate: async (estate: Partial<Estate>): Promise<void> => {
+    const { id, ...rest } = estate;
+    if (id && id.length > 20) {
+      const { data: existing } = await supabase.from('estates').select('id').eq('id', id).single();
+      if (existing) {
+        await supabase.from('estates').update(rest).eq('id', id);
+        return;
       }
-      return p;
-    });
-    db.set(STORAGE_KEYS.PLOTS, plots);
+    }
+    await supabase.from('estates').insert(rest);
+  },
+  deleteEstate: async (estateId: string): Promise<void> => {
+    await supabase.from('estates').delete().eq('id', estateId); // plots will cascade delete
+  },
+  updateAvailablePlotPrices: async (estateId: string, newPrice: number): Promise<void> => {
+    await supabase.from('plots').update({ price: newPrice }).eq('estateId', estateId).eq('status', 'available');
   },
 
   // Plots
-  getPlots: (): Plot[] => db.get(STORAGE_KEYS.PLOTS, []),
-  savePlot: (plot: Plot) => {
-    const plots = db.getPlots();
-    const index = plots.findIndex(p => p.id === plot.id);
-    if (index > -1) plots[index] = plot;
-    else plots.push(plot);
-    db.set(STORAGE_KEYS.PLOTS, plots);
+  getPlots: async (): Promise<Plot[]> => {
+    const { data, error } = await supabase.from('plots').select('*');
+    if (error) console.error(error);
+    return data || [];
   },
-  deletePlot: (plotId: string) => {
-    const plots = db.getPlots().filter(p => p.id !== plotId);
-    db.set(STORAGE_KEYS.PLOTS, plots);
+  savePlot: async (plot: Partial<Plot>): Promise<void> => {
+     const { id, ...rest } = plot;
+     if (id && id.length > 20) {
+      const { data: existing } = await supabase.from('plots').select('id').eq('id', id).single();
+      if (existing) {
+        await supabase.from('plots').update(rest).eq('id', id);
+        return;
+      }
+    }
+    await supabase.from('plots').insert(rest);
+  },
+  deletePlot: async (plotId: string): Promise<void> => {
+    await supabase.from('plots').delete().eq('id', plotId);
   },
 
   // Payments
-  getPayments: (): PaymentRecord[] => db.get(STORAGE_KEYS.PAYMENTS, []),
-  getPaymentsByClient: (clientId: string) => db.getPayments().filter(p => p.clientId === clientId),
-  savePayment: (payment: PaymentRecord) => {
-    const payments = db.getPayments();
-    payments.push(payment);
-    db.set(STORAGE_KEYS.PAYMENTS, payments);
+  getPayments: async (): Promise<PaymentRecord[]> => {
+    const { data, error } = await supabase.from('payment_records').select('*');
+    if (error) console.error(error);
+    return data || [];
+  },
+  getPaymentsByClient: async (clientId: string): Promise<PaymentRecord[]> => {
+    const { data, error } = await supabase.from('payment_records').select('*').eq('clientId', clientId);
+    if (error) console.error(error);
+    return data || [];
+  },
+  savePayment: async (payment: Partial<PaymentRecord>): Promise<void> => {
+     const { id, ...rest } = payment;
+     await supabase.from('payment_records').insert(rest);
   },
 
   // Commissions
-  getCommissions: (): Commission[] => db.get(STORAGE_KEYS.COMMISSIONS, []),
-  saveCommission: (comm: Commission) => {
-    const comms = db.getCommissions();
-    const index = comms.findIndex(c => c.id === comm.id);
-    if (index > -1) comms[index] = comm;
-    else comms.push(comm);
-    db.set(STORAGE_KEYS.COMMISSIONS, comms);
+  getCommissions: async (): Promise<Commission[]> => {
+    const { data, error } = await supabase.from('commissions').select('*').order('createdAt', { ascending: false });
+    if (error) console.error(error);
+    return data || [];
+  },
+  saveCommission: async (comm: Partial<Commission>): Promise<void> => {
+    const { id, ...rest } = comm;
+     if (id && id.length > 20) {
+      const { data: existing } = await supabase.from('commissions').select('id').eq('id', id).single();
+      if (existing) {
+        await supabase.from('commissions').update(rest).eq('id', id);
+        return;
+      }
+    }
+    await supabase.from('commissions').insert(rest);
   },
 
   // Installments
-  getInstallments: (): InstallmentPlan[] => db.get(STORAGE_KEYS.INSTALLMENTS, []),
-  saveInstallment: (plan: InstallmentPlan) => {
-    const plans = db.getInstallments();
-    const index = plans.findIndex(p => p.id === plan.id);
-    if (index > -1) plans[index] = plan;
-    else plans.push(plan);
-    db.set(STORAGE_KEYS.INSTALLMENTS, plans);
+  getInstallments: async (): Promise<InstallmentPlan[]> => {
+    const { data, error } = await supabase.from('installment_plans').select('*');
+    if (error) console.error(error);
+    return data || [];
   },
-  fulfillInstallmentPayment: (installmentId: string, amount: number, method: PaymentMethod) => {
-    const installments = db.getInstallments();
-    const inst = installments.find(i => i.id === installmentId);
-    if (!inst) return;
+  saveInstallment: async (plan: Partial<InstallmentPlan>): Promise<void> => {
+    const { id, ...rest } = plan;
+     if (id && id.length > 20) {
+      const { data: existing } = await supabase.from('installment_plans').select('id').eq('id', id).single();
+      if (existing) {
+        await supabase.from('installment_plans').update(rest).eq('id', id);
+        return;
+      }
+    }
+    await supabase.from('installment_plans').insert(rest);
+  },
+  fulfillInstallmentPayment: async (installmentId: string, amount: number, method: PaymentMethod): Promise<void> => {
+    const { data: inst, error } = await supabase.from('installment_plans').select('*').eq('id', installmentId).single();
+    if (error || !inst) return;
 
     // 1. Create Payment Record
-    db.savePayment({
-      id: Math.random().toString(36).substr(2, 9),
+    await db.savePayment({
       clientId: inst.clientId,
       plotId: inst.plotId,
       paymentDate: new Date().toISOString().split('T')[0],
@@ -157,82 +193,64 @@ export const db = {
       inst.nextDueDate = 'COMPLETED';
     }
 
-    db.saveInstallment(inst);
+    await db.saveInstallment(inst);
 
     // 3. Mark plot as fully paid if balance is 0
     if (inst.remainingAmount <= 0) {
-      const plots = db.getPlots();
-      const plotIndex = plots.findIndex(p => p.id === inst.plotId);
-      if (plotIndex > -1) {
-        plots[plotIndex].status = 'sold';
-        db.set(STORAGE_KEYS.PLOTS, plots);
-      }
+      await supabase.from('plots').update({ status: 'sold' }).eq('id', inst.plotId);
     }
   },
 
   // Realtors
-  getRealtors: (): Realtor[] => db.get(STORAGE_KEYS.REALTORS, []),
-  saveRealtor: (realtor: Realtor) => {
-    const realtors = db.getRealtors();
-    const index = realtors.findIndex(r => r.id === realtor.id);
-    if (index > -1) realtors[index] = realtor;
-    else realtors.push(realtor);
-    db.set(STORAGE_KEYS.REALTORS, realtors);
+  submitRealtorOnboarding: async (realtor: Partial<Realtor>): Promise<void> => {
+    const { data, error } = await supabase.rpc('submit_realtor_onboarding', {
+      p_realtor: realtor
+    });
+    if (error) {
+      console.error('RPC Error (Realtor):', error);
+      alert('Failed to submit: ' + error.message);
+      throw error;
+    }
+    if (data && typeof data === 'object' && !data.success) {
+      console.error('RPC Failed internally:', data.error);
+      alert('Failed to submit: ' + data.error);
+      throw new Error(data.error);
+    }
   },
-  deleteRealtor: (realtorId: string) => {
-    const realtors = db.getRealtors().filter(r => r.id !== realtorId);
-    db.set(STORAGE_KEYS.REALTORS, realtors);
+  getRealtors: async (): Promise<Realtor[]> => {
+    // If not authenticated, we use the public RPC which just returns id, fullName, status.
+    const { data: sessionData } = await supabase.auth.getSession();
+    if (!sessionData.session) {
+      const { data } = await supabase.rpc('get_public_realtors');
+      return (data || []) as Realtor[];
+    }
+
+    const { data, error } = await supabase.from('realtors').select('*').order('createdAt', { ascending: false });
+    if (error) console.error(error);
+    return data || [];
+  },
+  saveRealtor: async (realtor: Partial<Realtor>): Promise<void> => {
+    const { id, ...rest } = realtor;
+    if (id && id.length > 20) {
+      const { data: existing } = await supabase.from('realtors').select('id').eq('id', id).single();
+      if (existing) {
+        await supabase.from('realtors').update(rest).eq('id', id);
+        return;
+      }
+    }
+    await supabase.from('realtors').insert(rest);
+  },
+  deleteRealtor: async (realtorId: string): Promise<void> => {
+    await supabase.from('realtors').delete().eq('id', realtorId);
   },
   
   // Cross-verification
-  isEmailInUse: (email: string) => {
-    const isClient = db.getClients().some(c => c.email.toLowerCase() === email.toLowerCase());
-    const isRealtor = db.getRealtors().some(r => r.email.toLowerCase() === email.toLowerCase());
-    return { isClient, isRealtor };
+  isEmailInUse: async (email: string): Promise<{ isClient: boolean, isRealtor: boolean }> => {
+    const { data, error } = await supabase.rpc('check_email_status', { check_email: email });
+    if (error) {
+      console.error(error);
+      return { isClient: false, isRealtor: false };
+    }
+    return data as { isClient: boolean, isRealtor: boolean };
   }
 };
-
-// Migration: Ensure all estates have a basePrice
-const currentEstates = db.getEstates();
-let migrationNeeded = false;
-const migratedEstates = currentEstates.map(e => {
-  if (e.basePrice === undefined || e.basePrice === 0) {
-    migrationNeeded = true;
-    return { ...e, basePrice: 5000000 };
-  }
-  return e;
-});
-
-if (migrationNeeded) {
-  db.set(STORAGE_KEYS.ESTATES, migratedEstates);
-}
-
-// Seed Data
-if (db.getEstates().length === 0) {
-  const initialEstates: Estate[] = [
-    { id: 'e1', name: 'Emerald Gardens', location: 'Lekki Phase 1', totalPlots: 50, basePrice: 5000000 },
-    { id: 'e2', name: 'Pine View Estate', location: 'Epe', totalPlots: 100, basePrice: 7500000 },
-  ];
-  db.set(STORAGE_KEYS.ESTATES, initialEstates);
-
-  const initialClients: Client[] = [
-    { id: 'c1', fullName: 'Chidi Okonkwo', dob: '1985-05-12', phone: '08012345678', email: 'chidi@example.com', address: '12 Victoria Island', assignedRealtor: 'Ade Thompson', referralSource: 'Social Media', createdAt: new Date().toISOString() }
-  ];
-  db.set(STORAGE_KEYS.CLIENTS, initialClients);
-
-  const initialPlots: Plot[] = Array.from({ length: 15 }).map((_, i) => ({
-    id: `p${i}`,
-    plotNumber: `PLT-${100 + i}`,
-    estateId: i < 8 ? 'e1' : 'e2',
-    status: i === 0 ? 'sold' : 'available',
-    clientId: i === 0 ? 'c1' : undefined,
-    price: i < 8 ? 5000000 : 7500000,
-    size: '500sqm'
-  }));
-  db.set(STORAGE_KEYS.PLOTS, initialPlots);
-
-  const initialComms: Commission[] = [
-    { id: 'com1', realtorName: 'Ade Thompson', clientId: 'c1', plotId: 'p0', amount: 500000, percentage: 10, dueDate: '2024-12-01', status: 'pending', createdAt: new Date().toISOString() }
-  ];
-  db.set(STORAGE_KEYS.COMMISSIONS, initialComms);
-}

@@ -1,5 +1,6 @@
 import React from 'react';
 import { Lock, Award } from 'lucide-react';
+import { supabase } from '../supabaseClient';
 
 interface LoginProps {
   onLogin: () => void;
@@ -12,16 +13,26 @@ const DynamoLogo = ({ className = "w-8 h-8" }: { className?: string }) => (
 );
 
 const Login: React.FC<LoginProps> = ({ onLogin }) => {
+  const [email, setEmail] = React.useState('');
   const [password, setPassword] = React.useState('');
-  const [error, setError] = React.useState(false);
+  const [error, setError] = React.useState('');
+  const [loading, setLoading] = React.useState(false);
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (password === 'dynamogroup2010') {
-      onLogin();
+    setLoading(true);
+    setError('');
+    
+    const { error: authError } = await supabase.auth.signInWithPassword({
+      email,
+      password
+    });
+
+    if (authError) {
+      setError(authError.message);
+      setLoading(false);
     } else {
-      setError(true);
-      setTimeout(() => setError(false), 2000);
+      onLogin();
     }
   };
 
@@ -44,27 +55,43 @@ const Login: React.FC<LoginProps> = ({ onLogin }) => {
           </div>
 
           <form onSubmit={handleSubmit} className="space-y-6">
-            <div className="space-y-2">
-              <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest block ml-2">Secure Entry Protocol</label>
-              <div className="relative group">
-                <Lock className="absolute left-5 top-1/2 -translate-y-1/2 text-gray-500 group-focus-within:text-green-500 transition-colors" size={18} />
-                <input 
-                  autoFocus
-                  type="password" 
-                  placeholder="Password"
-                  value={password}
-                  onChange={(e) => setPassword(e.target.value)}
-                  className={`w-full bg-white/5 border-2 ${error ? 'border-red-500 animate-shake' : 'border-white/5 focus:border-green-600'} p-5 pl-14 rounded-2xl text-white font-black placeholder:text-gray-600 outline-none transition-all shadow-inner`}
-                />
+            <div className="space-y-4">
+              <div className="space-y-2">
+                <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest block ml-2">Authorized Email</label>
+                <div className="relative group">
+                  <input 
+                    autoFocus
+                    type="email" 
+                    placeholder="admin@dynamogroup.com"
+                    value={email}
+                    onChange={(e) => setEmail(e.target.value)}
+                    className="w-full bg-white/5 border-2 border-white/5 focus:border-green-600 p-5 px-6 rounded-2xl text-white font-bold placeholder:text-gray-600 outline-none transition-all shadow-inner"
+                  />
+                </div>
               </div>
-              {error && <p className="text-red-500 text-[10px] font-black uppercase tracking-widest text-center mt-2 animate-in slide-in-from-top-1">Access Revoked: Try Again</p>}
+
+              <div className="space-y-2">
+                <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest block ml-2">Secure Passcode</label>
+                <div className="relative group">
+                  <Lock className="absolute left-5 top-1/2 -translate-y-1/2 text-gray-500 group-focus-within:text-green-500 transition-colors" size={18} />
+                  <input 
+                    type="password" 
+                    placeholder="Enter password"
+                    value={password}
+                    onChange={(e) => setPassword(e.target.value)}
+                    className={`w-full bg-white/5 border-2 ${error ? 'border-red-500 animate-shake' : 'border-white/5 focus:border-green-600'} p-5 pl-14 rounded-2xl text-white font-bold placeholder:text-gray-600 outline-none transition-all shadow-inner`}
+                  />
+                </div>
+              </div>
+              {error && <p className="text-red-500 text-[10px] font-black block text-center mt-2 animate-in slide-in-from-top-1">{error}</p>}
             </div>
 
             <button 
               type="submit" 
+              disabled={loading}
               className="w-full bg-green-600 text-white py-5 rounded-2xl font-black uppercase tracking-[0.2em] text-xs hover:bg-green-500 transition-all shadow-2xl shadow-green-900/20 active:scale-[0.98] flex items-center justify-center gap-3 group"
             >
-              Initialize Node <DynamoLogo className="w-5 h-5 group-hover:rotate-12 transition-transform" />
+              {loading ? 'Authenticating...' : 'Initialize Node'} <DynamoLogo className="w-5 h-5 group-hover:rotate-12 transition-transform" />
             </button>
           </form>
 

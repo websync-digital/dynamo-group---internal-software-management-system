@@ -1,17 +1,49 @@
 import React from 'react';
 import { db } from '../db';
+import { supabase } from '../supabaseClient';
+import SkeletonLoader from '../components/SkeletonLoader';
 import { Estate, Plot, Client, PaymentMethod, PlotStatus, Commission, InstallmentPlan } from '../types';
 import { LayoutGrid, MapPin, X, Plus, Wallet, User, Tag, Phone, Mail, Calendar, ShieldCheck, Clock, FileText } from 'lucide-react';
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
 
 const Estates = () => {
-  const [estates, setEstates] = React.useState<Estate[]>(db.getEstates());
-  const [plots, setPlots] = React.useState<Plot[]>(db.getPlots());
-  const [selectedEstate, setSelectedEstate] = React.useState<Estate | null>(estates[0] || null);
+  const [estates, setEstates] = React.useState<Estate[]>([]);
+  const [plots, setPlots] = React.useState<Plot[]>([]);
+  const [clients, setClients] = React.useState<Client[]>([]);
+  const [selectedEstate, setSelectedEstate] = React.useState<Estate | null>(null);
   const [sellingPlot, setSellingPlot] = React.useState<Plot | null>(null);
   const [viewingOwnership, setViewingOwnership] = React.useState<{plot: Plot, client: Client} | null>(null);
-  const clients = db.getClients();
+  const [isLoading, setIsLoading] = React.useState(true);
+
+  const fetchEstateData = async () => {
+    const [fetchedEstates, fetchedPlots, fetchedClients] = await Promise.all([
+      db.getEstates(),
+      db.getPlots(),
+      db.getClients()
+    ]);
+    setEstates(fetchedEstates);
+    setPlots(fetchedPlots);
+    setClients(fetchedClients);
+    if (!selectedEstate && fetchedEstates.length > 0) {
+      setSelectedEstate(fetchedEstates[0]);
+    }
+    setIsLoading(false);
+  };
+
+  React.useEffect(() => {
+    fetchEstateData();
+
+    const channel = supabase.channel('public:estates_sync')
+      .on('postgres_changes', { event: '*', schema: 'public' }, () => {
+        fetchEstateData();
+      })
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, []); // Replaced selectedEstate dependency to avoid re-renders
 
   const [saleForm, setSaleForm] = React.useState({
     clientId: '',
@@ -35,7 +67,6 @@ const Estates = () => {
   const [tempBasePrice, setTempBasePrice] = React.useState<number>(0);
 
   const [isAddingEstate, setIsAddingEstate] = React.useState(false);
-  const [isSyncingPrice, setIsSyncingPrice] = React.useState(false);
   const [newEstateForm, setNewEstateForm] = React.useState({
     name: '',
     location: '',
@@ -47,7 +78,7 @@ const Estates = () => {
 
   const filteredPlots = plots.filter(p => p.estateId === selectedEstate?.id);
 
-  const handleSale = (e: React.FormEvent) => {
+  const handleSale = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!sellingPlot) return;
 
@@ -59,11 +90,10 @@ const Estates = () => {
 
     // 1. Update Plot
     const updatedPlot: Plot = { ...sellingPlot, status, clientId };
-    db.savePlot(updatedPlot);
+    await db.savePlot(updatedPlot);
 
     // 2. Create Payment Record
-    db.savePayment({
-      id: Math.random().toString(36).substr(2, 9),
+    await db.savePayment({
       clientId,
       plotId: sellingPlot.id,
       paymentDate: new Date().toISOString().split('T')[0],
@@ -74,8 +104,7 @@ const Estates = () => {
 
     // 3. Create Commission
     const commissionAmount = (sellingPlot.price * commissionPct) / 100;
-    db.saveCommission({
-      id: Math.random().toString(36).substr(2, 9),
+    await db.saveCommission({
       realtorName: realtorName || client.assignedRealtor,
       clientId,
       plotId: sellingPlot.id,
@@ -88,8 +117,7 @@ const Estates = () => {
 
     // 4. Create Installment Plan if applicable
     if (status === 'installment') {
-      db.saveInstallment({
-        id: Math.random().toString(36).substr(2, 9),
+      await db.saveInstallment({
         clientId,
         plotId: sellingPlot.id,
         totalAmount: sellingPlot.price,
@@ -100,17 +128,16 @@ const Estates = () => {
       });
     }
 
-    setPlots(db.getPlots());
+    await fetchEstateData();
     setSellingPlot(null);
     alert('Plot allocation completed successfully!');
   };
 
-  const handleAddPlot = (e: React.FormEvent) => {
+  const handleAddPlot = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!selectedEstate) return;
 
-    const newPlot: Plot = {
-      id: Math.random().toString(36).substr(2, 9),
+    const newPlot: Partial<Plot> = {
       plotNumber: newPlotForm.plotNumber,
       size: newPlotForm.size,
       price: newPlotForm.price,
@@ -118,52 +145,50 @@ const Estates = () => {
       status: newPlotForm.status
     };
 
-    db.savePlot(newPlot);
-    setPlots(db.getPlots());
+    await db.savePlot(newPlot);
+    await fetchEstateData();
     setIsAddingPlot(false);
     setNewPlotForm({ plotNumber: '', size: '500sqm', price: selectedEstate.basePrice || 5000000, status: 'available' });
   };
 
-  const handleEditPlot = (e: React.FormEvent) => {
+  const handleEditPlot = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!editingPlot) return;
 
-    db.savePlot(editingPlot);
-    setPlots(db.getPlots());
+    await db.savePlot(editingPlot);
+    await fetchEstateData();
     setEditingPlot(null);
   };
 
-  const handleSyncPrices = () => {
+  const handleSyncPrices = async () => {
     if (!selectedEstate || !selectedEstate.basePrice) return;
     if (window.confirm(`Synchronize all ${filteredPlots.filter(p => p.status === 'available').length} available plots to ₦${selectedEstate.basePrice.toLocaleString()}?`)) {
-      db.updateAvailablePlotPrices(selectedEstate.id, selectedEstate.basePrice);
-      setPlots(db.getPlots());
+      await db.updateAvailablePlotPrices(selectedEstate.id, selectedEstate.basePrice);
+      await fetchEstateData();
       alert('Inventory pricing synchronized!');
     }
   };
 
-  const handleUpdateEstatePrice = (newPrice: number) => {
+  const handleUpdateEstatePrice = async (newPrice: number) => {
     if (!selectedEstate) return;
     const updated = { ...selectedEstate, basePrice: newPrice };
-    db.saveEstate(updated);
-    setEstates(db.getEstates());
+    await db.saveEstate(updated);
+    await fetchEstateData();
     setSelectedEstate(updated);
   };
 
-  const handleAddEstate = (e: React.FormEvent) => {
+  const handleAddEstate = async (e: React.FormEvent) => {
     e.preventDefault();
-    const newEstate: Estate = {
-      id: Math.random().toString(36).substr(2, 9),
+    const newEstate: Partial<Estate> = {
       name: newEstateForm.name,
       location: newEstateForm.location,
       totalPlots: newEstateForm.totalPlots,
       basePrice: newEstateForm.basePrice
     };
 
-    db.saveEstate(newEstate);
-    const updatedEstates = db.getEstates();
-    setEstates(updatedEstates);
-    setSelectedEstate(newEstate);
+    await db.saveEstate(newEstate);
+    await fetchEstateData();
+    setSelectedEstate(null); // Fetch logic will reselect appropriately or can be selected later
     setIsAddingEstate(false);
     setNewEstateForm({ name: '', location: '', totalPlots: 0, basePrice: 5000000 });
   };
@@ -178,23 +203,21 @@ const Estates = () => {
     setContextMenu({ x: e.clientX, y: e.clientY, type: 'plot', id: plot.id, name: plot.plotNumber });
   };
 
-  const confirmDelete = () => {
+  const confirmDelete = async () => {
     if (!contextMenu) return;
 
     if (contextMenu.type === 'estate') {
       if (window.confirm(`Permanently delete "${contextMenu.name}" and all its plots?`)) {
-        db.deleteEstate(contextMenu.id);
-        const updatedEstates = db.getEstates();
-        setEstates(updatedEstates);
-        setPlots(db.getPlots());
+        await db.deleteEstate(contextMenu.id);
         if (selectedEstate?.id === contextMenu.id) {
-          setSelectedEstate(updatedEstates[0] || null);
+          setSelectedEstate(null);
         }
+        await fetchEstateData();
       }
     } else {
       if (window.confirm(`Delete plot ${contextMenu.name}?`)) {
-        db.deletePlot(contextMenu.id);
-        setPlots(db.getPlots());
+        await db.deletePlot(contextMenu.id);
+        await fetchEstateData();
       }
     }
     setContextMenu(null);
@@ -306,6 +329,10 @@ const Estates = () => {
     return () => window.removeEventListener('click', handleClick);
   }, []);
 
+  if (isLoading) {
+    return <SkeletonLoader />;
+  }
+
   return (
     <div className="space-y-8 animate-in fade-in duration-500">
       <div className="flex flex-col md:flex-row md:items-end justify-between gap-4">
@@ -352,9 +379,12 @@ const Estates = () => {
                       <div className="flex items-center space-x-2 w-full animate-in slide-in-from-left-2 duration-300">
                         <input 
                           autoFocus
-                          type="number" 
-                          value={tempBasePrice}
-                          onChange={e => setTempBasePrice(Number(e.target.value))}
+                          type="text" 
+                          value={tempBasePrice ? tempBasePrice.toLocaleString() : ''}
+                          onChange={e => {
+                            const raw = e.target.value.replace(/,/g, '');
+                            if (!isNaN(Number(raw))) setTempBasePrice(Number(raw));
+                          }}
                           className="w-full bg-white border-2 border-green-600 px-3 py-1.5 rounded-lg font-black text-gray-900 outline-none shadow-inner"
                         />
                         <button 
@@ -575,7 +605,7 @@ const Estates = () => {
                   </div>
                   <div className="space-y-1">
                     <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest">Price (₦)</label>
-                    <input required type="number" value={editingPlot.price} onChange={e => setEditingPlot({...editingPlot, price: Number(e.target.value)})} className="w-full border-2 border-gray-100 p-4 rounded-2xl focus:border-green-500 outline-none font-black" />
+                    <input required type="text" value={editingPlot.price ? editingPlot.price.toLocaleString() : ''} onChange={e => { const r = e.target.value.replace(/,/g, ''); if(!isNaN(Number(r))) setEditingPlot({...editingPlot, price: Number(r)})}} className="w-full border-2 border-gray-100 p-4 rounded-2xl focus:border-green-500 outline-none font-black" />
                   </div>
                 </div>
                 <div className="flex items-center space-x-3 p-4 bg-gray-50 rounded-2xl border border-gray-100">
@@ -633,7 +663,7 @@ const Estates = () => {
               </div>
               <div className="space-y-2">
                 <label className="text-[10px] font-black text-gray-500 uppercase tracking-widest">Initial Deposit Token (₦)</label>
-                <input required type="number" value={saleForm.amountPaid} onChange={e => setSaleForm({...saleForm, amountPaid: Number(e.target.value)})} className="w-full border-2 border-gray-100 p-4 rounded-2xl font-black text-lg focus:border-green-500 outline-none" />
+                <input required type="text" value={saleForm.amountPaid ? saleForm.amountPaid.toLocaleString() : ''} onChange={e => { const r = e.target.value.replace(/,/g, ''); if(!isNaN(Number(r))) setSaleForm({...saleForm, amountPaid: Number(r)})}} className="w-full border-2 border-gray-100 p-4 rounded-2xl font-black text-lg focus:border-green-500 outline-none" />
               </div>
               <div className="bg-gray-50 p-6 rounded-2xl space-y-2 border border-gray-100">
                 <p className="flex justify-between items-center text-xs font-bold text-gray-400"><span>CONTRACT PRICE:</span> <span className="font-black text-gray-900">₦{sellingPlot.price.toLocaleString()}</span></p>
@@ -665,7 +695,7 @@ const Estates = () => {
                 </div>
                 <div className="space-y-1">
                   <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest">Unit Price (₦)</label>
-                  <input required type="number" value={newPlotForm.price} onChange={e => setNewPlotForm({...newPlotForm, price: Number(e.target.value)})} className="w-full border-2 border-gray-100 p-4 rounded-2xl focus:border-green-500 outline-none font-black" />
+                  <input required type="text" value={newPlotForm.price ? newPlotForm.price.toLocaleString() : ''} onChange={e => { const r = e.target.value.replace(/,/g, ''); if(!isNaN(Number(r))) setNewPlotForm({...newPlotForm, price: Number(r)})}} className="w-full border-2 border-gray-100 p-4 rounded-2xl focus:border-green-500 outline-none font-black" />
                 </div>
               </div>
               <div className="flex items-center space-x-3 p-4 bg-gray-50 rounded-2xl border border-gray-100">
@@ -707,11 +737,11 @@ const Estates = () => {
                 <div className="grid grid-cols-2 gap-4">
                   <div className="space-y-1">
                     <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest">Total Plot Count</label>
-                    <input required type="number" value={newEstateForm.totalPlots} onChange={e => setNewEstateForm({...newEstateForm, totalPlots: Number(e.target.value)})} className="w-full border-2 border-gray-100 p-4 rounded-2xl focus:border-green-700 outline-none font-black" />
+                    <input required type="text" value={newEstateForm.totalPlots ? newEstateForm.totalPlots.toLocaleString() : ''} onChange={e => { const r = e.target.value.replace(/,/g, ''); if(!isNaN(Number(r))) setNewEstateForm({...newEstateForm, totalPlots: Number(r)})}} className="w-full border-2 border-gray-100 p-4 rounded-2xl focus:border-green-700 outline-none font-black" />
                   </div>
                   <div className="space-y-1">
                     <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest">Entry Base Price (₦)</label>
-                    <input required type="number" value={newEstateForm.basePrice} onChange={e => setNewEstateForm({...newEstateForm, basePrice: Number(e.target.value)})} className="w-full border-2 border-gray-100 p-4 rounded-2xl focus:border-green-700 outline-none font-black" />
+                    <input required type="text" value={newEstateForm.basePrice ? newEstateForm.basePrice.toLocaleString() : ''} onChange={e => { const r = e.target.value.replace(/,/g, ''); if(!isNaN(Number(r))) setNewEstateForm({...newEstateForm, basePrice: Number(r)})}} className="w-full border-2 border-gray-100 p-4 rounded-2xl focus:border-green-700 outline-none font-black" />
                   </div>
                 </div>
               </div>

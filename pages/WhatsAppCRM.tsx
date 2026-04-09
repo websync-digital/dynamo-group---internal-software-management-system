@@ -4,9 +4,20 @@ import { Client } from '../types';
 import { MessageSquare, Send, Search, Phone, History, MoreVertical } from 'lucide-react';
 
 const WhatsAppCRM = () => {
-  const [clients] = React.useState<Client[]>(db.getClients());
-  const [selectedClient, setSelectedClient] = React.useState<Client | null>(clients[0] || null);
+  const [clients, setClients] = React.useState<Client[]>([]);
+  const [selectedClient, setSelectedClient] = React.useState<Client | null>(null);
   const [message, setMessage] = React.useState('');
+  const [isLoading, setIsLoading] = React.useState(true);
+
+  React.useEffect(() => {
+    const fetchData = async () => {
+      const dbClients = await db.getClients();
+      setClients(dbClients);
+      if (dbClients.length > 0) setSelectedClient(dbClients[0]);
+      setIsLoading(false);
+    };
+    fetchData();
+  }, []);
 
   const handleSendMessage = (e: React.FormEvent) => {
     e.preventDefault();

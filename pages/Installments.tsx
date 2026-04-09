@@ -1,34 +1,66 @@
 import React from 'react';
 import { db } from '../db';
-import { InstallmentPlan, PaymentMethod } from '../types';
+import { supabase } from '../supabaseClient';
+import SkeletonLoader from '../components/SkeletonLoader';
+import { InstallmentPlan, PaymentMethod, Plot, Estate, Client } from '../types';
 import { Clock, Send, Bell, Calendar, Mail, MessageSquare, Phone, Loader2, Wallet, X, ShieldCheck } from 'lucide-react';
 import { smsService } from '../utils/smsService';
 
 const Installments = () => {
-  const [installments, setInstallments] = React.useState<InstallmentPlan[]>(db.getInstallments());
+  const [installments, setInstallments] = React.useState<InstallmentPlan[]>([]);
   const [isSending, setIsSending] = React.useState<string | null>(null);
   const [payingInstallment, setPayingInstallment] = React.useState<InstallmentPlan | null>(null);
   const [paymentForm, setPaymentForm] = React.useState({
-    method: 'bank_transfer' as PaymentMethod
+    method: 'bank_transfer' as PaymentMethod,
+    amount: 0
   });
 
-  const plots = db.getPlots();
-  const estates = db.getEstates();
-  const clients = db.getClients();
+  const [plots, setPlots] = React.useState<Plot[]>([]);
+  const [estates, setEstates] = React.useState<Estate[]>([]);
+  const [clients, setClients] = React.useState<Client[]>([]);
+  const [isLoading, setIsLoading] = React.useState(true);
+
+  const fetchData = async () => {
+    const [fetchedInstallments, fetchedPlots, fetchedEstates, fetchedClients] = await Promise.all([
+      db.getInstallments(),
+      db.getPlots(),
+      db.getEstates(),
+      db.getClients()
+    ]);
+    setInstallments(fetchedInstallments);
+    setPlots(fetchedPlots);
+    setEstates(fetchedEstates);
+    setClients(fetchedClients);
+    setIsLoading(false);
+  };
+
+  React.useEffect(() => {
+    fetchData();
+
+    const channel = supabase.channel('public:installments_sync')
+      .on('postgres_changes', { event: '*', schema: 'public' }, () => {
+        fetchData();
+      })
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, []);
 
   const calculateInstallmentAmount = (inst: InstallmentPlan) => {
     const divisor = inst.frequency === 'monthly' ? 12 : 4;
     return (inst.totalAmount / divisor);
   };
 
-  const handleRecordPayment = (e: React.FormEvent) => {
+  const handleRecordPayment = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!payingInstallment) return;
 
-    db.fulfillInstallmentPayment(payingInstallment.id, paymentForm.amount, paymentForm.method);
-    setInstallments(db.getInstallments());
+    await db.fulfillInstallmentPayment(payingInstallment.id, paymentForm.amount, paymentForm.method);
+    await fetchData();
     setPayingInstallment(null);
-    setPaymentForm({ amount: 0, method: 'bank_transfer' });
+    setPaymentForm({ amount: 0, method: 'bank_transfer' as PaymentMethod });
     alert('Payment recorded and client ledger updated!');
   };
 
@@ -38,7 +70,7 @@ const Installments = () => {
 
     setIsSending(inst.id);
     const amount = calculateInstallmentAmount(inst);
-    const settings = db.getSmsSettings();
+    const settings = await db.getSmsSettings();
     
     const message = smsService.formatTemplate(settings.template, {
       name: client.fullName,
@@ -60,6 +92,10 @@ const Installments = () => {
     const cleanPhone = client.phone.replace(/\D/g, '');
     window.open(`https://wa.me/${cleanPhone}?text=${encodeURIComponent(message)}`, '_blank');
   };
+
+  if (isLoading) {
+    return <SkeletonLoader />;
+  }
 
   return (
     <div className="space-y-8 animate-in fade-in duration-500">
@@ -213,10 +249,9 @@ const Installments = () => {
                   <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest">Fulfillment Amount (₦)</label>
                   <input 
                     required 
-                    type="number" 
-                    max={payingInstallment.remainingAmount}
-                    value={paymentForm.amount} 
-                    onChange={e => setPaymentForm({...paymentForm, amount: Number(e.target.value)})} 
+                    type="text" 
+                    value={paymentForm.amount ? paymentForm.amount.toLocaleString() : ''} 
+                    onChange={e => { const r = e.target.value.replace(/,/g, ''); if(!isNaN(Number(r))) setPaymentForm({...paymentForm, amount: Number(r)})}} 
                     className="w-full border-2 border-gray-100 p-4 rounded-2xl focus:border-green-500 outline-none font-black text-lg" 
                   />
                 </div>

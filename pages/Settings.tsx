@@ -5,15 +5,25 @@ import { SmsSettings } from '../types';
 import { Settings as SettingsIcon, Save, MessageSquare, Zap, Shield, HelpCircle, CheckCircle, AlertTriangle } from 'lucide-react';
 
 const Settings = () => {
-  const [settings, setSettings] = React.useState<SmsSettings>(db.getSmsSettings());
+  const [settings, setSettings] = React.useState<SmsSettings>({ apiUrl: '', apiKey: '', senderId: 'DYNAMO', isConfigured: false, template: '' });
+  const [isLoading, setIsLoading] = React.useState(true);
   const [isSaving, setIsSaving] = React.useState(false);
   const [saveStatus, setSaveStatus] = React.useState<'idle' | 'success' | 'error'>('idle');
 
-  const handleSave = (e: React.FormEvent) => {
+  React.useEffect(() => {
+    const fetchSettings = async () => {
+      const data = await db.getSmsSettings();
+      setSettings(data);
+      setIsLoading(false);
+    };
+    fetchSettings();
+  }, []);
+
+  const handleSave = async (e: React.FormEvent) => {
     e.preventDefault();
     setIsSaving(true);
     try {
-      db.saveSmsSettings(settings);
+      await db.saveSmsSettings(settings);
       setSaveStatus('success');
       setTimeout(() => setSaveStatus('idle'), 3000);
     } catch (error) {

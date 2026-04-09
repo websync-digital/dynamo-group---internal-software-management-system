@@ -71,6 +71,7 @@ export interface InstallmentPlan {
 }
 
 export interface SmsSettings {
+  id?: string;
   apiUrl: string;
   apiKey: string;
   senderId: string;
