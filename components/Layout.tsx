@@ -99,7 +99,7 @@ export const Layout: React.FC<{ children: React.ReactNode, onLogout?: () => void
       </aside>
 
       {/* Main Content */}
-      <main className="flex-1 flex flex-col min-h-screen overflow-hidden">
+      <main className="flex-1 flex flex-col h-screen overflow-hidden">
         <header className="h-16 bg-white border-b border-gray-200 flex items-center justify-between px-4 lg:px-8 shrink-0">
           <div className="flex items-center">
             {/* Hamburger Button for Mobile */}

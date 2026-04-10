@@ -7,4 +7,13 @@ if (!supabaseUrl || !supabaseAnonKey) {
   console.error('Missing Supabase URL or Anon Key. Please check your .env file.');
 }
 
-export const supabase = createClient(supabaseUrl, supabaseAnonKey);
+export const supabase = createClient(supabaseUrl, supabaseAnonKey, {
+  auth: {
+    persistSession: true,
+    autoRefreshToken: true,
+    detectSessionInUrl: true,
+    storageKey: 'dynamo-auth-token',
+    storage: window.localStorage
+  }
+});
+

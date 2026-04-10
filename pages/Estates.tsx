@@ -10,24 +10,37 @@ import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
 
 const Estates = () => {
-  const [selectedEstate, setSelectedEstate] = React.useState<Estate | null>(null);
+  const [selectedEstateId, setSelectedEstateId] = React.useState<string | null>(null);
   const [sellingPlot, setSellingPlot] = React.useState<Plot | null>(null);
   const [viewingOwnership, setViewingOwnership] = React.useState<{plot: Plot, client: Client} | null>(null);
 
-    const { data: estates, isLoading: isLoadingEstates } = useInfiniteRealtime<Estate>({ 
+  const { data: estates, isInitialLoading: isLoadingEstates } = useInfiniteRealtime<Estate>({ 
     table: 'estates', 
-    pageSize: 100,
+    pageSize: 1000,
     orderBy: 'name', // Sorted alphabetically to avoid createdAt confusion
     orderAscending: true 
   });
+
+  const selectedEstate = estates.find(e => e.id === selectedEstateId) || (estates.length > 0 ? estates[0] : null);
   const { data: clients } = useInfiniteRealtime<Client>({ table: 'clients', pageSize: 1000 });
 
-  const { data: filteredPlots, isLoading: isLoadingPlots, hasNextPage, loadMore, isFetchingNextPage } = useInfiniteRealtime<Plot>({ 
+  const plotFilters = React.useMemo(() => (
+    selectedEstate ? { estateId: selectedEstate.id } : undefined
+  ), [selectedEstate?.id]);
+
+  const { 
+    data: filteredPlots, 
+    isInitialLoading: isLoadingPlots, 
+    isRefreshing: isRefreshingPlots, 
+    hasNextPage, 
+    loadMore, 
+    isFetchingNextPage 
+  } = useInfiniteRealtime<Plot>({ 
     table: 'plots', 
     pageSize: 100, 
     orderBy: 'plotNumber', // Precision inventory requires identifier sorting
     orderAscending: true,
-    filters: selectedEstate ? { estateId: selectedEstate.id } : undefined
+    filters: plotFilters
   });
 
   const isLoading = isLoadingEstates || (selectedEstate && isLoadingPlots);
@@ -41,10 +54,10 @@ const Estates = () => {
   }, [inView, hasNextPage, isFetchingNextPage, loadMore]);
 
   React.useEffect(() => {
-    if (!selectedEstate && estates.length > 0) {
-      setSelectedEstate(estates[0]);
+    if (!selectedEstateId && estates.length > 0) {
+      setSelectedEstateId(estates[0].id);
     }
-  }, [estates, selectedEstate]);
+  }, [estates, selectedEstateId]);
 
   const [saleForm, setSaleForm] = React.useState({
     clientId: '',
@@ -174,8 +187,6 @@ const Estates = () => {
     if (!selectedEstate) return;
     const updated = { ...selectedEstate, basePrice: newPrice };
     await db.saveEstate(updated);
-
-    setSelectedEstate(updated);
   };
 
   const handleAddEstate = async (e: React.FormEvent) => {
@@ -189,7 +200,6 @@ const Estates = () => {
 
     await db.saveEstate(newEstate);
 
-    setSelectedEstate(null); // Fetch logic will reselect appropriately or can be selected later
     setIsAddingEstate(false);
     setNewEstateForm({ name: '', location: '', totalPlots: 0, basePrice: 5000000 });
   };
@@ -210,8 +220,8 @@ const Estates = () => {
     if (contextMenu.type === 'estate') {
       if (window.confirm(`Permanently delete "${contextMenu.name}" and all its plots?`)) {
         await db.deleteEstate(contextMenu.id);
-        if (selectedEstate?.id === contextMenu.id) {
-          setSelectedEstate(null);
+        if (selectedEstateId === contextMenu.id) {
+          setSelectedEstateId(null);
         }
 
       }
@@ -335,28 +345,31 @@ const Estates = () => {
   }
 
   return (
-    <div className="space-y-8 animate-in fade-in duration-500">
-      <div className="flex flex-col md:flex-row md:items-end justify-between gap-4">
+    <div className="flex flex-col h-full space-y-8 animate-in fade-in duration-500">
+      <div className="flex flex-col md:flex-row md:items-end justify-between gap-4 shrink-0">
         <div>
           <h1 className="text-2xl font-black text-gray-900 uppercase tracking-tight">Estates & Plot Inventory</h1>
           <p className="text-gray-500 text-sm font-medium">Precision tracking for global property assets.</p>
         </div>
-        <div className="flex bg-white p-1 rounded-xl border border-gray-200 shadow-sm">
-          {estates.map(e => (
-            <button
-              key={e.id}
-              onClick={() => setSelectedEstate(e)}
-              onContextMenu={(ev) => handleDeleteEstate(ev, e)}
-              className={`px-6 py-2.5 rounded-lg text-xs font-black uppercase tracking-widest transition-all ${
-                selectedEstate?.id === e.id ? 'bg-green-600 text-white shadow-lg' : 'text-gray-400 hover:text-gray-600'
-              }`}
-            >
-              {e.name}
-            </button>
-          ))}
+        <div className="flex bg-white p-1 rounded-xl border border-gray-200 shadow-sm items-center overflow-x-auto no-scrollbar max-w-full">
+          {isRefreshingPlots && <Loader2 className="animate-spin text-green-600 mx-3 shrink-0" size={16} />}
+          <div className="flex items-center space-x-1">
+            {estates.map(e => (
+              <button
+                key={e.id}
+                onClick={() => setSelectedEstateId(e.id)}
+                onContextMenu={(ev) => handleDeleteEstate(ev, e)}
+                className={`px-6 py-2.5 rounded-lg text-xs font-black uppercase tracking-widest transition-all whitespace-nowrap ${
+                  selectedEstateId === e.id ? 'bg-green-600 text-white shadow-lg' : 'text-gray-400 hover:text-gray-600'
+                }`}
+              >
+                {e.name}
+              </button>
+            ))}
+          </div>
           <button 
             onClick={() => setIsAddingEstate(true)}
-            className="px-4 py-2 rounded-lg text-green-600 hover:bg-green-50 transition-colors"
+            className="px-4 py-2 rounded-lg text-green-600 hover:bg-green-50 transition-colors shrink-0 sticky right-0 bg-white ml-2 shadow-[-10px_0_10px_-5px_rgba(0,0,0,0.05)] border-l"
           >
             <Plus size={20} />
           </button>
@@ -364,7 +377,8 @@ const Estates = () => {
       </div>
 
       {selectedEstate && (
-        <div className="grid grid-cols-1 lg:grid-cols-4 gap-8">
+        <div className="flex-1 overflow-auto min-h-0">
+          <div className="grid grid-cols-1 lg:grid-cols-4 gap-8 pb-8">
           <div className="lg:col-span-1 space-y-6">
             <div className="bg-white p-8 rounded-2xl border border-gray-100 shadow-xl space-y-6">
               <h3 className="font-black text-[10px] text-gray-400 uppercase tracking-[0.2em] flex items-center space-x-2">
@@ -516,6 +530,7 @@ const Estates = () => {
             </div>
           </div>
         </div>
+      </div>
       )}
 
       {/* Plot Ownership Modal */}

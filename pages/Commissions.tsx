@@ -42,7 +42,14 @@ const Commissions = () => {
     return () => clearTimeout(t);
   }, [searchTerm]);
 
-  const { data: commissions, isLoading, hasNextPage, loadMore, isFetchingNextPage } = useInfiniteRealtime<Commission>({
+  const { 
+    data: commissions, 
+    isInitialLoading, 
+    isRefreshing, 
+    hasNextPage, 
+    loadMore, 
+    isFetchingNextPage 
+  } = useInfiniteRealtime<Commission>({
     table: 'commissions',
     pageSize: 50,
     orderBy: 'createdAt',
@@ -117,29 +124,37 @@ const Commissions = () => {
     .sort((a, b) => {
       if (a.status === 'pending' && b.status === 'paid') return -1;
       if (a.status === 'paid' && b.status === 'pending') return 1;
-      return new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime();
+      const dateA = a.createdAt ? new Date(a.createdAt).getTime() : 0;
+      const dateB = b.createdAt ? new Date(b.createdAt).getTime() : 0;
+      return dateB - dateA;
     });
 
   const getInitials = (name: string) => name.split(' ').map(n => n[0]).join('').toUpperCase().slice(0, 2);
 
-  if (isLoading) {
+  if (isInitialLoading) {
     return <SkeletonLoader />;
   }
 
   return (
-    <div className="space-y-8 animate-in fade-in duration-500">
-      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+    <div className="flex flex-col h-full space-y-6 animate-in fade-in duration-500">
+      <div className="flex justify-between items-center">
         <div>
-          <h1 className="text-2xl font-bold text-gray-900">Commission Management</h1>
-          <p className="text-gray-500 text-sm italic">"Precision in payouts, excellence in service."</p>
+          <h1 className="text-2xl font-bold text-gray-900 uppercase tracking-tight">Commission Ledger</h1>
+          <p className="text-gray-500 text-sm font-medium">Real-time performance tracking for all asset cycles.</p>
         </div>
-        <button 
-          onClick={exportCSV}
-          className="bg-white border border-gray-200 text-gray-800 px-5 py-2.5 rounded-lg flex items-center space-x-2 hover:bg-gray-50 shadow-sm transition-all font-bold text-xs uppercase"
-        >
-          <FileText size={16} className="text-green-600" />
-          <span>Export Ledger</span>
-        </button>
+        <div className="flex items-center space-x-4">
+          <div className="text-right">
+            <p className="text-[10px] font-black text-gray-400 uppercase tracking-widest leading-none">Total Unclaimed</p>
+            <p className="text-xl font-black text-green-600 tracking-tight">₦{pendingAmount.toLocaleString()}</p>
+          </div>
+          <button 
+            onClick={exportCSV}
+            className="bg-white border border-gray-200 text-gray-800 px-5 py-2.5 rounded-lg flex items-center space-x-2 hover:bg-gray-50 shadow-sm transition-all font-bold text-xs uppercase"
+          >
+            <FileText size={16} className="text-green-600" />
+            <span>Export Ledger</span>
+          </button>
+        </div>
       </div>
 
       {/* Summary Stats */}
@@ -153,7 +168,11 @@ const Commissions = () => {
       {/* Filter Section */}
       <div className="flex flex-col md:flex-row gap-4">
         <div className="relative flex-1">
-          <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" size={18} />
+          {isRefreshing ? (
+            <Loader2 className="absolute left-3 top-1/2 -translate-y-1/2 text-green-600 animate-spin" size={18} />
+          ) : (
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" size={18} />
+          )}
           <input 
             type="text" 
             placeholder="Search realtor or client name..." 
@@ -178,10 +197,10 @@ const Commissions = () => {
       </div>
 
       {/* Main Table */}
-      <div className="bg-white rounded-2xl border border-gray-200 shadow-xl overflow-hidden">
-        <div className="overflow-x-auto">
-          <table className="w-full text-left">
-            <thead className="bg-gray-900 text-gray-300 text-[10px] uppercase tracking-[0.15em] font-black border-b border-gray-800">
+      <div className="flex-1 min-h-0 bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden flex flex-col">
+        <div className="flex-1 overflow-auto">
+          <table className="w-full text-left border-collapse">
+            <thead className="sticky top-0 z-10 bg-gray-900 text-gray-300 text-[10px] uppercase tracking-[0.15em] font-black border-b border-gray-800">
               <tr>
                 <th className="px-8 py-5">Realtor Identity</th>
                 <th className="px-8 py-5">Client / Plot Details</th>

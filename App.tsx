@@ -19,19 +19,36 @@ const App: React.FC = () => {
   const [isLoading, setIsLoading] = React.useState(true);
 
   React.useEffect(() => {
-    // Check active session on mount
-    supabase.auth.getSession().then(({ data: { session } }) => {
-      setIsAuthenticated(!!session);
-      setIsLoading(false);
-    });
+    // Check initial session
+    const checkSession = async () => {
+      try {
+        const { data: { session } } = await supabase.auth.getSession();
+        setIsAuthenticated(!!session);
+      } catch (err) {
+        console.error('Auth Init Error:', err);
+      } finally {
+        setIsLoading(false);
+      }
+    };
 
-    // Listen for auth changes
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
-      setIsAuthenticated(!!session);
+    checkSession();
+
+    // Listen for auth changes with specific event handling
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
+      console.log('Auth Event:', event);
+      
+      if (event === 'SIGNED_IN' || event === 'TOKEN_REFRESHED' || event === 'USER_UPDATED') {
+        setIsAuthenticated(true);
+      } else if (event === 'SIGNED_OUT') {
+        setIsAuthenticated(false);
+      } else if (event === 'INITIAL_SESSION') {
+        setIsAuthenticated(!!session);
+      }
     });
 
     return () => subscription.unsubscribe();
   }, []);
+
 
   const handleLogin = () => {
     // State is handled automatically by onAuthStateChange

@@ -16,7 +16,14 @@ const Realtors = () => {
     return () => clearTimeout(t);
   }, [search]);
 
-  const { data: realtors, isLoading, hasNextPage, loadMore, isFetchingNextPage } = useInfiniteRealtime<Realtor>({
+  const { 
+    data: realtors, 
+    isInitialLoading, 
+    isRefreshing, 
+    hasNextPage, 
+    loadMore, 
+    isFetchingNextPage 
+  } = useInfiniteRealtime<Realtor>({
     table: 'realtors',
     pageSize: 50,
     orderBy: 'createdAt',
@@ -151,12 +158,12 @@ const Realtors = () => {
     </div>
   );
 
-  if (isLoading) {
+  if (isInitialLoading) {
     return <SkeletonLoader />;
   }
 
   return (
-    <div className="space-y-8 animate-in fade-in duration-500">
+    <div className="flex flex-col h-full space-y-6 animate-in fade-in duration-500">
       <div className="flex flex-col md:flex-row md:items-end justify-between gap-4">
         <div>
           <h1 className="text-2xl font-black text-gray-900 uppercase tracking-tight">Realtor Database</h1>
@@ -179,10 +186,14 @@ const Realtors = () => {
         </div>
       </div>
 
-      <div className="bg-white rounded-3xl border border-gray-100 shadow-2xl overflow-hidden">
+      <div className="flex-1 min-h-0 bg-white rounded-3xl border border-gray-100 shadow-2xl overflow-hidden flex flex-col">
         <div className="p-6 border-b border-gray-50 flex items-center bg-gray-50/50">
           <div className="relative flex-1 max-w-md">
-            <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-400" size={18} />
+            {isRefreshing ? (
+              <Loader2 className="absolute left-4 top-1/2 -translate-y-1/2 text-green-600 animate-spin" size={18} />
+            ) : (
+              <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-400" size={18} />
+            )}
             <input 
               type="text" 
               placeholder="Search Realtors by identity..." 
@@ -193,9 +204,9 @@ const Realtors = () => {
           </div>
         </div>
 
-        <div className="overflow-x-auto">
-          <table className="w-full text-left">
-            <thead className="bg-gray-50 text-[10px] text-gray-400 uppercase tracking-[0.2em] font-black border-b border-gray-100">
+        <div className="flex-1 overflow-auto">
+          <table className="w-full text-left border-collapse">
+            <thead className="sticky top-0 z-10 bg-gray-50 text-[10px] text-gray-400 uppercase tracking-[0.2em] font-black border-b border-gray-100">
               <tr>
                 <th className="px-8 py-6">Professional Identity</th>
                 <th className="px-8 py-6">Channels</th>
@@ -205,7 +216,7 @@ const Realtors = () => {
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-50">
-              {realtors.length === 0 && !isLoading ? (
+              {realtors.length === 0 && !isInitialLoading && !isRefreshing ? (
                 <tr>
                   <td colSpan={5} className="px-8 py-20 text-center text-gray-300">
                     <div className="flex flex-col items-center space-y-4">

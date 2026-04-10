@@ -18,7 +18,14 @@ const Clients = () => {
     return () => clearTimeout(t);
   }, [search]);
 
-  const { data: clients, isLoading, hasNextPage, loadMore, isFetchingNextPage } = useInfiniteRealtime<Client>({
+  const { 
+    data: clients, 
+    isInitialLoading, 
+    isRefreshing, 
+    hasNextPage, 
+    loadMore, 
+    isFetchingNextPage 
+  } = useInfiniteRealtime<Client>({
     table: 'clients',
     pageSize: 50,
     orderBy: 'createdAt',
@@ -206,12 +213,12 @@ const Clients = () => {
     );
   };
 
-  if (isLoading) {
+  if (isInitialLoading) {
     return <SkeletonLoader />;
   }
 
   return (
-    <div className="space-y-6 animate-in fade-in duration-500">
+    <div className="flex flex-col h-full space-y-6 animate-in fade-in duration-500">
       <div className="flex justify-between items-center">
         <div>
           <h1 className="text-2xl font-bold text-gray-900">Client Profiling</h1>
@@ -239,10 +246,14 @@ const Clients = () => {
         </div>
       </div>
 
-      <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
+      <div className="flex-1 min-h-0 bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden flex flex-col">
         <div className="p-4 border-b border-gray-100 flex items-center bg-gray-50">
           <div className="relative flex-1 max-w-md">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" size={18} />
+            {isRefreshing ? (
+              <Loader2 className="absolute left-3 top-1/2 -translate-y-1/2 text-green-600 animate-spin" size={18} />
+            ) : (
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" size={18} />
+            )}
             <input 
               type="text" 
               placeholder="Search by name or email..." 
@@ -253,9 +264,9 @@ const Clients = () => {
           </div>
         </div>
 
-        <div className="overflow-x-auto">
-          <table className="w-full text-left">
-            <thead className="bg-gray-50 text-gray-500 text-xs uppercase tracking-wider font-semibold">
+        <div className="flex-1 overflow-auto">
+          <table className="w-full text-left border-collapse">
+            <thead className="sticky top-0 z-10 bg-gray-50 text-gray-500 text-xs uppercase tracking-wider font-semibold border-b border-gray-100 shadow-sm">
               <tr>
                 <th className="px-6 py-4">Full Name</th>
                 <th className="px-6 py-4">Contact Info</th>
@@ -321,7 +332,7 @@ const Clients = () => {
                   </td>
                 </tr>
               ))}
-              {clients.length === 0 && !isLoading && (
+              {clients.length === 0 && !isInitialLoading && !isRefreshing && (
                 <tr>
                   <td colSpan={5} className="px-6 py-12 text-center text-gray-400">
                     No clients found matching your search.

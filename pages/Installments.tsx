@@ -16,7 +16,13 @@ const Installments = () => {
     amount: 0
   });
 
-  const { data: installments, isLoading, hasNextPage, loadMore, isFetchingNextPage } = useInfiniteRealtime<InstallmentPlan>({
+  const { 
+    data: installments, 
+    isInitialLoading, 
+    hasNextPage, 
+    loadMore, 
+    isFetchingNextPage 
+  } = useInfiniteRealtime<InstallmentPlan>({
     table: 'installment_plans',
     pageSize: 50,
     orderBy: 'nextDueDate',
@@ -79,12 +85,12 @@ const Installments = () => {
     window.open(`https://wa.me/${cleanPhone}?text=${encodeURIComponent(message)}`, '_blank');
   };
 
-  if (isLoading) {
+  if (isInitialLoading) {
     return <SkeletonLoader />;
   }
 
   return (
-    <div className="space-y-8 animate-in fade-in duration-500">
+    <div className="flex flex-col h-full space-y-8 animate-in fade-in duration-500">
       <div className="flex justify-between items-center">
         <div>
           <h1 className="text-2xl font-black text-gray-900 uppercase tracking-tight">Fulfillment & Installments</h1>
@@ -92,44 +98,44 @@ const Installments = () => {
         </div>
       </div>
 
-      <div className="grid grid-cols-1 gap-6">
-        <div className="bg-white rounded-3xl border border-gray-200 shadow-2xl overflow-hidden">
-          <div className="p-8 border-b border-gray-100 bg-gray-50/30 flex items-center justify-between">
-            <div className="flex items-center space-x-3">
-              <div className="p-2 bg-green-100 rounded-lg text-green-700">
-                <Bell size={20} />
-              </div>
-              <h3 className="font-black text-gray-900 uppercase tracking-widest text-xs">Active Asset Fulfillment</h3>
+      <div className="flex-1 min-h-0 bg-white rounded-3xl border border-gray-200 shadow-2xl overflow-hidden flex flex-col">
+        <div className="p-8 border-b border-gray-100 bg-gray-50/30 flex items-center justify-between">
+          <div className="flex items-center space-x-3">
+            <div className="p-2 bg-green-100 rounded-lg text-green-700">
+              <Bell size={20} />
             </div>
-            <div className="text-[10px] font-black text-gray-400 uppercase tracking-widest bg-white px-4 py-2 rounded-full border border-gray-100">
-              Active Portfolios: {installments.length}
-            </div>
+            <h3 className="font-black text-gray-900 uppercase tracking-widest text-xs">Active Asset Fulfillment</h3>
           </div>
-          
-          <div className="overflow-x-auto">
-            <table className="w-full text-left">
-              <thead className="bg-gray-50/50 text-[10px] text-gray-400 uppercase tracking-[0.2em] font-black border-b border-gray-100">
+          <div className="text-[10px] font-black text-gray-400 uppercase tracking-widest bg-white px-4 py-2 rounded-full border border-gray-100">
+            Active Portfolios: {installments.length}
+          </div>
+        </div>
+        
+        <div className="flex-1 overflow-auto">
+          <table className="w-full text-left">
+            <thead className="sticky top-0 z-10 bg-gray-50/90 backdrop-blur-sm text-[10px] text-gray-400 uppercase tracking-[0.2em] font-black border-b border-gray-100">
+              <tr>
+                <th className="px-8 py-6">Managed Client</th>
+                <th className="px-8 py-6">Managed Asset</th>
+                <th className="px-8 py-6">Plan Value</th>
+                <th className="px-8 py-6">Outstanding</th>
+                <th className="px-8 py-6">Cycle</th>
+                <th className="px-8 py-6">Next Maturity</th>
+                <th className="px-8 py-6 text-center">Fulfillment Actions</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-gray-50">
+              {installments.length === 0 ? (
                 <tr>
-                  <th className="px-8 py-6">Managed Client</th>
-                  <th className="px-8 py-6">Managed Asset</th>
-                  <th className="px-8 py-6">Plan Value</th>
-                  <th className="px-8 py-6">Outstanding</th>
-                  <th className="px-8 py-6">Cycle</th>
-                  <th className="px-8 py-6">Next Maturity</th>
-                  <th className="px-8 py-6 text-center">Fulfillment Actions</th>
+                  <td colSpan={7} className="px-8 py-24 text-center">
+                    <div className="flex flex-col items-center space-y-4 opacity-20">
+                      <Clock size={64} />
+                      <p className="font-black text-xl uppercase tracking-[0.3em]">No Active Plans</p>
+                    </div>
+                  </td>
                 </tr>
-              </thead>
-              <tbody className="divide-y divide-gray-50">
-                {installments.length === 0 ? (
-                  <tr>
-                    <td colSpan={6} className="px-8 py-24 text-center">
-                      <div className="flex flex-col items-center space-y-4 opacity-20">
-                        <Clock size={64} />
-                        <p className="font-black text-xl uppercase tracking-[0.3em]">No Active Plans</p>
-                      </div>
-                    </td>
-                  </tr>
-                ) : installments.map((inst) => {
+              ) : installments.map((inst) => {
+
                   const client = clients.find(c => c.id === inst.clientId);
                   const isFullyPaid = inst.remainingAmount <= 0;
 
@@ -183,24 +189,24 @@ const Installments = () => {
                           {!isFullyPaid && (
                             <button 
                               onClick={() => setPayingInstallment(inst)}
-                              className="flex items-center space-x-2 px-6 py-2.5 bg-green-600 text-white rounded-xl hover:bg-green-700 transition-all shadow-lg active:scale-95 text-[10px] font-black uppercase tracking-widest"
+                              className="flex items-center space-x-1 px-3 py-1 bg-green-600 text-white rounded-xl hover:bg-green-700 transition-all shadow-lg active:scale-95 text-[10px] font-black uppercase tracking-widest"
                             >
-                              <Wallet size={14} />
+                              <Wallet size={12} />
                               <span>Log Payment</span>
                             </button>
                           )}
-                          <div className="flex space-x-2 opacity-40 group-hover:opacity-100 transition-opacity">
+                          <div className="flex space-x-2">
                             <button 
                               onClick={() => sendSMS(inst)}
                               disabled={isSending === inst.id}
-                              className="p-2.5 bg-gray-900 text-white rounded-xl hover:bg-black transition-all shadow-md"
+                              className="p-2.5 bg-blue-600 text-white rounded-xl hover:bg-blue-700 transition-all shadow-lg active:scale-95 flex items-center justify-center"
                               title="SMS Alert"
                             >
                               {isSending === inst.id ? <Loader2 size={16} className="animate-spin" /> : <MessageSquare size={16} />}
                             </button>
                             <button 
                               onClick={() => sendWhatsApp(inst)}
-                              className="p-2.5 bg-green-50 text-green-600 rounded-xl hover:bg-green-100 transition-all border border-green-100"
+                              className="p-2.5 bg-green-600 text-white rounded-xl hover:bg-green-700 transition-all shadow-lg active:scale-95 flex items-center justify-center"
                               title="WhatsApp Alert"
                             >
                               <Phone size={16} />
@@ -222,7 +228,6 @@ const Installments = () => {
             </table>
           </div>
         </div>
-      </div>
 
       {payingInstallment && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4">
