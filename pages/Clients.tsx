@@ -128,6 +128,10 @@ const Clients = () => {
                   <p><span className="text-gray-500">Phone:</span> {client.phone}</p>
                   <p><span className="text-gray-500">Email:</span> {client.email}</p>
                   <p><span className="text-gray-500">Address:</span> {client.address}</p>
+                  <div className="mt-4 p-3 bg-green-50 rounded-lg border border-green-100">
+                    <p className="text-[10px] font-black text-green-600 uppercase tracking-widest leading-none mb-2">Managing Elite Realtor</p>
+                    <p className="font-bold text-gray-900">{client.assignedRealtor || 'Direct Registration'}</p>
+                  </div>
                 </div>
               </section>
 
@@ -286,7 +290,12 @@ const Clients = () => {
                       </div>
                     </div>
                   </td>
-                  <td className="px-6 py-4 text-sm text-gray-600">{client.assignedRealtor}</td>
+                  <td className="px-6 py-4">
+                    <div className="flex flex-col">
+                      <p className="text-sm font-bold text-gray-900 leading-none">{client.assignedRealtor || 'Direct Account'}</p>
+                      <p className="text-[9px] text-gray-400 font-bold uppercase tracking-tight mt-1">{client.assignedRealtor ? 'Elite Partner' : 'System Assigned'}</p>
+                    </div>
+                  </td>
                   <td className="px-6 py-4">
                     <span className="px-2 py-1 bg-blue-50 text-blue-700 rounded text-xs font-medium">
                       {client.referralSource}

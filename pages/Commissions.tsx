@@ -53,7 +53,7 @@ const Commissions = () => {
   });
 
   const { data: clients } = useInfiniteRealtime<Client>({ table: 'clients', pageSize: 1000 });
-  const { data: plots } = useInfiniteRealtime<Plot>({ table: 'plots', pageSize: 1000 });
+  const { data: plots } = useInfiniteRealtime<Plot>({ table: 'plots', pageSize: 1000, orderBy: 'id' });
   const { data: realtors } = useInfiniteRealtime<any>({ table: 'realtors', pageSize: 1000 });
 
   const { ref, inView } = useInView({ threshold: 0 });

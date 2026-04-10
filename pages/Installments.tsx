@@ -17,14 +17,14 @@ const Installments = () => {
   });
 
   const { data: installments, isLoading, hasNextPage, loadMore, isFetchingNextPage } = useInfiniteRealtime<InstallmentPlan>({
-    table: 'installments',
+    table: 'installment_plans',
     pageSize: 50,
     orderBy: 'nextDueDate',
     orderAscending: true
   });
 
-  const { data: plots } = useInfiniteRealtime<Plot>({ table: 'plots', pageSize: 1000 });
-  const { data: estates } = useInfiniteRealtime<Estate>({ table: 'estates', pageSize: 100 });
+  const { data: plots } = useInfiniteRealtime<Plot>({ table: 'plots', pageSize: 1000, orderBy: 'id' });
+  const { data: estates } = useInfiniteRealtime<Estate>({ table: 'estates', pageSize: 100, orderBy: 'id' });
   const { data: clients } = useInfiniteRealtime<Client>({ table: 'clients', pageSize: 1000 });
 
   const { ref, inView } = useInView({ threshold: 0 });

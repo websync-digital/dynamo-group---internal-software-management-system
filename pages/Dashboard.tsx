@@ -21,10 +21,10 @@ const StatCard = ({ title, value, icon: Icon, color, subtitle }: any) => (
 
 const Dashboard = () => {
   const { data: clients, isLoading: clientsLoading } = useInfiniteRealtime<any>({ table: 'clients', pageSize: 1000 });
-  const { data: plots, isLoading: plotsLoading } = useInfiniteRealtime<any>({ table: 'plots', pageSize: 1000 });
+  const { data: plots, isLoading: plotsLoading } = useInfiniteRealtime<any>({ table: 'plots', pageSize: 1000, orderBy: 'id' });
   const { data: commissions, isLoading: commsLoading } = useInfiniteRealtime<any>({ table: 'commissions', pageSize: 1000 });
-  const { data: installments, isLoading: instLoading } = useInfiniteRealtime<any>({ table: 'installments', pageSize: 1000 });
-  const { data: estates, isLoading: estatesLoading } = useInfiniteRealtime<any>({ table: 'estates', pageSize: 1000 });
+  const { data: installments, isLoading: instLoading } = useInfiniteRealtime<any>({ table: 'installment_plans', pageSize: 1000, orderBy: 'id' });
+  const { data: estates, isLoading: estatesLoading } = useInfiniteRealtime<any>({ table: 'estates', pageSize: 1000, orderBy: 'id' });
 
   const isLoading = clientsLoading || plotsLoading || commsLoading || instLoading || estatesLoading;
 
